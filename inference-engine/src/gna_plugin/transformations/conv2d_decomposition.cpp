@@ -42,9 +42,9 @@ struct ConvData {
     size_t pads_begin_x;
     size_t pads_end_y;
     size_t pads_end_x;
-    ngraph::op::PadType padding_type;
+    op::PadType padding_type;
     size_t output_channel_count;
-    ngraph::Shape output_shape;
+    Shape output_shape;
 };
 
 struct MaxPoolData {
@@ -325,8 +325,11 @@ bool DetectGraphSequence(GraphData& graph_data, const ConvData& conv_data, MaxPo
             graph_data.last_op_in_sequence_for_replacement = graph_data.max_pool;
             graph_data.disable_nhwc_to_nchw_option = true;
         } else {
-            graph_data.trailing_transpose = DetectNextLayer<Transpose>(graph_data.max_pool);
-            graph_data.last_op_in_sequence_for_replacement = graph_data.trailing_transpose;
+            if ((graph_data.trailing_transpose = DetectNextLayer<Transpose>(graph_data.max_pool))) {
+                graph_data.last_op_in_sequence_for_replacement = graph_data.trailing_transpose;
+            } else {
+                graph_data.last_op_in_sequence_for_replacement = graph_data.max_pool;
+            }
         }
     }
 

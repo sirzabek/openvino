@@ -132,7 +132,7 @@ protected:
         auto bias_weights = CommonTestUtils::generate_float_numbers(shape_size(bias_shape), -1.5f, 1.5f);
         Output<Node> bias_const = std::make_shared<Constant>(ngPrc, bias_shape, bias_weights);
         Output<Node> transp_bias_const = std::make_shared<Constant>(ngPrc, transp_bias_shape, bias_weights);
-        Output<Node> last_op = std::make_shared<Transpose>(conv, transpose_out_order);;
+        Output<Node> last_op = std::make_shared<Transpose>(conv, transpose_out_order);
 
         switch (model) {
         case modelType::TranspConvBcastAddTransp:

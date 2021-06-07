@@ -31,9 +31,10 @@ struct ConvData {
     size_t input_height;
     size_t input_width;
     size_t input_channel_count;
+    size_t filter_count;
+    size_t filter_channel_count;
     size_t filter_height;
     size_t filter_width;
-    size_t filter_count;
     size_t filter_dilation_x;
     size_t filter_dilation_y;
     size_t filter_stride_x;
@@ -62,8 +63,9 @@ struct OutData {
     std::shared_ptr<Node> padded_input_plane;
 };
 
-std::vector<std::shared_ptr<opset1::Constant>> ReduceConv2DFilterHeightByChannelPermute(std::shared_ptr<opset1::Constant>& filters,
+std::vector<std::shared_ptr<opset1::Constant>> SplitConv2DFilters(std::shared_ptr<opset1::Constant>& filters,
     bool vertical_permute, bool horizontal_permute, size_t split_channels) {
+    //TODO: pass conv_data here, it has most of needed info
     std::vector <std::shared_ptr<opset1::Constant>> result;
     auto filter_shape = filters->get_output_shape(0);
     if (!horizontal_permute && !vertical_permute && split_channels == 1)
@@ -140,7 +142,7 @@ std::shared_ptr<opset1::StridedSlice> FlatCrop(Output<Node> input, size_t offset
     } else if (shape.size() == 2) {
         return std::make_shared<opset1::StridedSlice>(
             input, // data
-            opset1::Constant::create(element::i64, Shape{ 2 }, { (size_t)0, offset }), // begin sice index
+            opset1::Constant::create(element::i64, Shape{ 2 }, { (size_t)0, offset }), // begin slice index
             opset1::Constant::create(element::i64, Shape{ 2 }, { (size_t)0, offset + size }), // end slice index
             opset1::Constant::create(element::i64, Shape{ 2 }, { (size_t)1, (size_t)1 }), // strides
             std::vector<int64_t>{1, 0},  // begin mask
@@ -180,9 +182,10 @@ void FillConvData(std::shared_ptr<opset1::Convolution> conv, ConvData &conv_data
     conv_data.input_height = conv->input_value(0).get_shape()[2];
     conv_data.input_width = conv->input_value(0).get_shape()[3];
     conv_data.input_channel_count = conv->input_value(0).get_shape()[1];
+    conv_data.filter_count = conv->input_value(1).get_shape()[0];
+    conv_data.filter_channel_count = conv->input_value(1).get_shape()[1];
     conv_data.filter_height = conv->input_value(1).get_shape()[2];
     conv_data.filter_width = conv->input_value(1).get_shape()[3];
-    conv_data.filter_count = conv->input_value(1).get_shape()[0];
     conv_data.filter_dilation_x = conv->get_dilations()[1];
     conv_data.filter_dilation_y = conv->get_dilations()[0];
     conv_data.filter_stride_x = conv->get_strides()[1];
@@ -226,9 +229,9 @@ std::shared_ptr<opset1::Convolution> DetectVerifyConvolution(std::shared_ptr<Nod
             output_shape.size() != 4 ||
             conv->get_dilations().size() != 2 ||
             conv->get_strides().size() != 2 ||
-            input.get_shape()[0] != 1 ||
-            filters.get_shape()[2] == 1 ||
-            filters.get_shape()[3] == 1) {
+            input.get_shape()[0] != 1 //||
+/*            filters.get_shape()[2] == 1 ||
+            filters.get_shape()[3] == 1*/) {
             return nullptr;
         }
 
@@ -353,9 +356,7 @@ bool DetectGraphSequence(GraphData& graph_data, const ConvData& conv_data, MaxPo
     return true;
 }
 
-bool PreparePadding(const GraphData& graph_data, ConvData& conv_data, const MaxPoolData& pool_data, OutData& out_data) {
-    size_t output_channel_count = conv_data.filter_count;
-
+void CalculatePadding(const GraphData& graph_data, ConvData& conv_data, const MaxPoolData& pool_data, OutData& out_data) {
     switch (conv_data.padding_type) {
     case op::PadType::EXPLICIT:
         // all paddings already set
@@ -396,22 +397,36 @@ bool PreparePadding(const GraphData& graph_data, ConvData& conv_data, const MaxP
         ((conv_data.filter_height - 1) * conv_data.filter_dilation_y + 1)) / conv_data.filter_stride_y + 1;
     out_data.output_width = (conv_data.input_width + conv_data.pads_begin_x + conv_data.pads_end_x -
         ((conv_data.filter_width - 1) * conv_data.filter_dilation_x + 1)) / conv_data.filter_stride_x + 1;
+}
 
-    if (output_channel_count != conv_data.output_shape[1] ||
+bool CalculateSplit(const ConvData& conv_data, const MaxPoolData& maxpool_data, OutData& out_data) {
+    out_data.conv_count = 1;
+
+    // Check GNA limitations of 768 filters
+    // TODO: GNA_MAX_1D_CONV_CHANNEL_COUNT can be moved to limitations
+    size_t total_factorized_conv_channel_count = (conv_data.input_channel_count * conv_data.filter_height * conv_data.filter_width);
+    while (total_factorized_conv_channel_count / out_data.conv_count > GNA_MAX_1D_CONV_CHANNEL_COUNT ||
+        total_factorized_conv_channel_count % out_data.conv_count != 0 || conv_data.filter_channel_count % out_data.conv_count != 0)
+        out_data.conv_count++;
+
+    // LIMITATION: currently we are able to split only convolutions without pooling in horizontal dimention
+    if (out_data.conv_count > GNA_MAX_PERMUTE_COL_COUNT || ((maxpool_data.pool_size_x > 1 || maxpool_data.pool_stride_x > 1) && out_data.conv_count > 1))
+        return false;
+
+    return true;
+}
+
+bool ShouldDecompose(const GraphData& graph_data, const ConvData& conv_data, const MaxPoolData& maxpool_data, OutData& out_data) {
+    if (conv_data.filter_count != conv_data.output_shape[1] ||
         out_data.output_height != conv_data.output_shape[2] ||
         out_data.output_width != conv_data.output_shape[3]) {
         return false;
     }
 
-    out_data.conv_count = 1;
-    // Last check GNA limitations of 768 filters
-    size_t total_factorized_conv_channel_count = (conv_data.input_channel_count * conv_data.filter_height * conv_data.filter_width);
-    while (total_factorized_conv_channel_count / out_data.conv_count > GNA_MAX_1D_CONV_CHANNEL_COUNT ||
-        total_factorized_conv_channel_count % out_data.conv_count != 0)
-        out_data.conv_count++;
-    //LIMITATION: currently we are able to split only convolutions without pooling in horizontal dimention
-    if (out_data.conv_count > GNA_MAX_PERMUTE_COL_COUNT || ((pool_data.pool_size_x > 1 || pool_data.pool_stride_x > 1) && out_data.conv_count > 1))
+    // Check if split of plane due to GNA HW limitations is possible
+    if (!CalculateSplit(conv_data, maxpool_data, out_data)) {
         return false;
+    }
 
     // GNA supported features - there is no need to decompose such convolution
     if (out_data.conv_count == 1 && (conv_data.input_height == 1 || conv_data.input_width == 1) &&
@@ -522,6 +537,46 @@ void ApplyPadding(const GraphData& graph_data, const ConvData& conv_data, OutDat
     }
 }
 
+std::vector<std::shared_ptr<opset1::Constant>> CreateSplit(const GraphData& graph_data, ConvData& conv_data, const OutData& out_data, OutputVector& split_planes) {
+    const Output<Node>& filters = graph_data.conv->input_value(1);
+    auto filter_values = std::dynamic_pointer_cast<opset1::Constant>(filters.get_node_shared_ptr());
+
+    if (out_data.conv_count > 1) {
+        auto reshape_before_transpose = std::make_shared<opset1::Reshape>(out_data.padded_input_plane,
+            op::Constant::create(element::i64, Shape{ 2 },
+                { shape_size(out_data.padded_input_plane->get_shape()) / out_data.conv_count, out_data.conv_count }), false);
+
+        auto transpose_before_channel_wise_split = std::make_shared<op::Transpose>(reshape_before_transpose,
+            op::Constant::create(element::Type_t::i64, Shape{ 2 }, { 1ll, 0ll })->output(0));
+
+        //TODO: in what cases is this needed? Used only when the conv input plane is beyond GNA limit. It transposes to the same layout as already done in last step...?
+        //auto reshape_after_transpose = std::make_shared<opset1::Reshape>(transpose_before_channel_wise_split,
+        //    op::Constant::create(element::i64, Shape{ 2 }, { (size_t)out_data.conv_count,
+        //        shape_size(out_data.padded_input_plane->get_shape()) / out_data.conv_count }), false);
+
+        const auto axis_node = opset1::Constant::create(element::i64, Shape{}, { 0 });
+        const auto split = std::make_shared<opset1::Split>(transpose_before_channel_wise_split, axis_node, out_data.conv_count);
+        split_planes = split->outputs();
+    } else {
+        split_planes.push_back(out_data.padded_input_plane);
+    }
+
+    // If the input plane exceeds GNA limits and we have split into several convolutions, then we need to split filter/kernel data as well
+    bool vertical_permute = (conv_data.filter_height > 1);
+    bool horizontal_permute = (conv_data.filter_dilation_x > 1);
+
+    std::vector<std::shared_ptr<opset1::Constant>> h_1_filters =
+        SplitConv2DFilters(filter_values, vertical_permute, horizontal_permute, out_data.conv_count);
+
+    for (auto filter : h_1_filters)
+        copy_runtime_info(graph_data.conv, filter);
+
+    // If we have split input plane and convolutions due to GNA limitation - we must sum their results at the end
+    conv_data.input_channel_count /= out_data.conv_count;
+
+    return h_1_filters;
+}
+
 std::shared_ptr<Node> GetPartialResults(const GraphData& graph_data, ConvData& conv_data, const OutData& out_data, const MaxPoolData& pool_data,
     Output<Node>& reduced_input_plane, const std::vector<std::shared_ptr<opset1::Constant>>& h_1_filters, const size_t conv_index) {
     OutputVector result_chunks;
@@ -570,7 +625,7 @@ std::shared_ptr<Node> GetPartialResults(const GraphData& graph_data, ConvData& c
 
             // flatten
             auto flatten_dilated_conv_input = std::make_shared<opset1::Reshape>(permuted_dilated_chunks,
-                op::Constant::create(ngraph::element::i64, Shape{ 4 },
+                op::Constant::create(element::i64, Shape{ 4 },
                     Shape{ 1ull, 1ull, out_data.output_width, h_1_filter_channel_count * conv_data.filter_width }), false);
 
             copy_runtime_info(graph_data.conv, NodeVector{ flatten_dilated_conv_input, permuted_dilated_chunks, dilated_chunks_concat });
@@ -650,38 +705,10 @@ std::shared_ptr<Node> GetPartialResults(const GraphData& graph_data, ConvData& c
 }
 
 void ApplyTransform(const GraphData& graph_data, ConvData& conv_data, const MaxPoolData& pool_data, const OutData& out_data) {
-    const Output<Node>& filters = graph_data.conv->input_value(1);
-    auto filter_values = std::dynamic_pointer_cast<opset1::Constant>(filters.get_node_shared_ptr());
     OutputVector split_planes;
-    if (out_data.conv_count > 1) {
-        auto reshape_before_permute = std::make_shared<opset1::Reshape>(out_data.padded_input_plane,
-            op::Constant::create(ngraph::element::i64, Shape{ 2 },
-            { shape_size(out_data.padded_input_plane->get_shape()) / out_data.conv_count, out_data.conv_count }), false);
-
-        auto permute_before_channel_wise_split = std::make_shared<op::Transpose>(reshape_before_permute,
-            op::Constant::create(element::Type_t::i64, Shape{ 2 }, { 1ll, 0ll })->output(0));
-
-        auto reshape_after_permute = std::make_shared<opset1::Reshape>(permute_before_channel_wise_split,
-            op::Constant::create(ngraph::element::i64, Shape{ 2 }, { (size_t)out_data.conv_count,
-                out_data.padded_input_plane->get_shape()[1] / out_data.conv_count }), false);
-
-        const auto axis_node = ngraph::opset1::Constant::create(element::i64, Shape{}, { 0 });
-        const auto split = std::make_shared<ngraph::opset1::Split>(reshape_after_permute, axis_node, out_data.conv_count);
-        split_planes = split->outputs();
-    } else {
-        split_planes.push_back(out_data.padded_input_plane);
-    }
-
-    bool vertical_permute = (conv_data.filter_height > 1);
-    bool horizontal_permute = (conv_data.filter_dilation_x > 1);
-    std::vector<std::shared_ptr<opset1::Constant>> h_1_filters =
-        ReduceConv2DFilterHeightByChannelPermute(filter_values, vertical_permute, horizontal_permute, out_data.conv_count);
-    for (auto filter : h_1_filters)
-        copy_runtime_info(graph_data.conv, filter);
-
-    // if we split input planes due to GNA limitation - we must sum their results
     std::vector<std::shared_ptr<Node>> partial_conv_results;
-    conv_data.input_channel_count /= out_data.conv_count;
+
+    auto h_1_filters = CreateSplit(graph_data, conv_data, out_data, split_planes);
 
     for (size_t conv_index = 0; conv_index < out_data.conv_count; conv_index++) {
         Output<Node> reduced_input_plane = split_planes[conv_index];
@@ -715,7 +742,7 @@ void ApplyTransform(const GraphData& graph_data, ConvData& conv_data, const MaxP
 
             // flatten
             auto flatten_dilated_permuted_input = std::make_shared<opset1::Reshape>(permuted_dilated_chunks,
-                op::Constant::create(ngraph::element::i64, Shape{ 2 }, { (size_t)1, (conv_data.pads_begin_x + conv_data.input_width + conv_data.pads_end_x) *
+                op::Constant::create(element::i64, Shape{ 2 }, { (size_t)1, (conv_data.pads_begin_x + conv_data.input_width + conv_data.pads_end_x) *
                 conv_data.input_channel_count * out_data.output_height * conv_data.filter_height }), false);
 
             copy_runtime_info(graph_data.conv, { dilated_chunks_concat, flatten_dilated_permuted_input, permuted_dilated_chunks });
@@ -785,7 +812,9 @@ bool pass::Conv2dDecomposition::run_on_function(std::shared_ptr<Function> f) {
         if (!DetectGraphSequence(graph_data, conv_data, maxpool_data))
             continue;
 
-        if (!PreparePadding(graph_data, conv_data, maxpool_data, out_data))
+        CalculatePadding(graph_data, conv_data, maxpool_data, out_data);
+
+        if (!ShouldDecompose(graph_data, conv_data, maxpool_data, out_data))
             continue;
 
         // All checks applied - now we may start to do transformations

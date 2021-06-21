@@ -24,7 +24,6 @@ struct GraphData {
     std::shared_ptr<op::util::UnaryElementwiseArithmetic> af;
     std::shared_ptr<Node> bias_const;
     std::shared_ptr<Node>last_op_in_sequence_for_replacement;
-    bool disable_nhwc_to_nchw_option;
 };
 
 struct ConvData {
@@ -194,7 +193,6 @@ bool DetectOptionalLayer(GraphData& graph_data, std::shared_ptr<T> layer) {
         // disable_nhwc_to_nchw option case
         if (graph_data.trailing_transpose) {
             graph_data.last_op_in_sequence_for_replacement = layer;
-            graph_data.disable_nhwc_to_nchw_option = true;
         } else {
             if ((graph_data.trailing_transpose = DetectNextLayer<Transpose>(layer))) {
                 graph_data.last_op_in_sequence_for_replacement = graph_data.trailing_transpose;
@@ -209,7 +207,6 @@ bool DetectOptionalLayer(GraphData& graph_data, std::shared_ptr<T> layer) {
 bool DetectGraphSequence(GraphData& graph_data, const ConvData& conv_data) {
     std::shared_ptr<opset1::Add> conv_bias;
     graph_data.last_op_in_sequence_for_replacement = graph_data.conv;
-    graph_data.disable_nhwc_to_nchw_option = false;
 
     if ((graph_data.trailing_transpose = DetectNextLayer<Transpose>(graph_data.conv))) {
         graph_data.last_op_in_sequence_for_replacement = graph_data.trailing_transpose;
@@ -218,7 +215,6 @@ bool DetectGraphSequence(GraphData& graph_data, const ConvData& conv_data) {
             (conv_bias = DetectNextLayer<opset1::Add>(graph_data.trailing_transpose)) &&
             (VerifyBias(conv_bias, conv_data.filter_count))) {
             graph_data.last_op_in_sequence_for_replacement = conv_bias;
-            graph_data.disable_nhwc_to_nchw_option = true;
         }
     } else if ((conv_bias = DetectNextLayer<opset1::Add>(graph_data.conv))) {
         if (!VerifyLayer(conv_bias) || !(VerifyBias(conv_bias, conv_data.filter_count)))

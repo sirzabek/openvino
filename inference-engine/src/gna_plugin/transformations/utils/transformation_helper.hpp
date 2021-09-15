@@ -71,7 +71,7 @@ std::shared_ptr<ngraph::opset7::StridedSlice> FlatCrop(ngraph::Output<ngraph::No
 std::shared_ptr<ngraph::Node> VerifyBiasGetConst(std::shared_ptr<ngraph::Node> conv, std::shared_ptr<ngraph::Node> bias);
 
 /**
- * @brief inserts a new fake quantize layer (if it exists) copied from an existing fake quantize layer and conncts it to the output of a given layer
+ * @brief inserts a new fake quantize layer copied from an existing one and connects it to the output of a given layer
  * @param fq_layer existing fake quantize layer to be copied
  * @param last_node the node to which output the new fake quantize layer will be connected
  * @return new fake quantize layer or the last node

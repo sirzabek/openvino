@@ -65,10 +65,10 @@ std::shared_ptr<ngraph::opset7::StridedSlice> FlatCrop(ngraph::Output<ngraph::No
 /**
  * @brief checks whether an add present after convolution is a bias and gets its const input
  * @param conv convolution layer preceding potential bias
- * @param bias potential bias layer passed from ngraph matcher
+ * @param add potential bias layer passed from ngraph matcher
  * @return bias const if the add layer present after convolution is a bias, nullptr otherwise
  */
-std::shared_ptr<ngraph::Node> VerifyBiasGetConst(std::shared_ptr<ngraph::Node> conv, std::shared_ptr<ngraph::Node> bias);
+std::shared_ptr<ngraph::Node> VerifyBiasGetConst(std::shared_ptr<ngraph::Node> conv, std::shared_ptr<ngraph::Node> add);
 
 /**
  * @brief inserts a new fake quantize layer copied from an existing one and connects it to the output of a given layer

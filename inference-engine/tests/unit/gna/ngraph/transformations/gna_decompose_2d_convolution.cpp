@@ -569,7 +569,7 @@ std::shared_ptr<ngraph::Node> CreateDeomposedConv(const GraphData& graph_data, C
             // We need to calculate some parameters in case horizontal stride > 1 is used, because if we use the ones available from the original convolution
             // we won't take into account the fact horizontal strides will be supported by the newly created 1D convolution, and not by decomposition
             size_t filter_dilation_width = conv_params.filter_width > 1 ? conv_params.filter_dilation_width : 1;
-            size_t output_width = (conv_params.input_width - (conv_params.filter_width + filter_dilation_width - 2));
+            size_t output_width = (conv_params.input_width - (filter_dilation_width * (conv_data.filter_width - 1)));
 
             if (conv_params.filter_width > 1) {
                 for (size_t filter_width = 0; filter_width < conv_params.filter_width; filter_width++) {

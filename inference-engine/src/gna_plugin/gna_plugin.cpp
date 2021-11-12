@@ -73,6 +73,7 @@
 #include "transformations/op_conversions/convert_mvn1_to_mvn6.hpp"
 #include "transformations/decompose_mvn.hpp"
 #include "transformations/substitute_softsign.hpp"
+#include "transformations/split_convolution_with_large_number_of_filters.hpp"
 
 #include <ngraph/opsets/opset7.hpp>
 
@@ -707,6 +708,11 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
         manager.register_pass<SplitConvolutionWithFq>();
         manager.register_pass<SplitConvolutionWithBias>();
         manager.register_pass<SplitConvolution>();
+        if (effectiveGnaCompileTarget == InferenceEngine::GNAConfigParams::GNA_TARGET_3_0) {
+            manager.register_pass<SplitConvolutionFilterWithFq>();
+            manager.register_pass<SplitConvolutionFilterWithBias>();
+            manager.register_pass<SplitConvolutionFilter>();
+        }
         manager.register_pass<InsertReshapeAroundMatmulWithTranspose>();
         manager.register_pass<InsertReshapeAroundMatmulWithFq>();
         manager.register_pass<InsertReshapeAroundMatmulWithAdd>();

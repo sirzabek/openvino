@@ -8,6 +8,7 @@
 #include <ngraph/opsets/opset8.hpp>
 #include <ngraph/pattern/op/or.hpp>
 #include <ngraph/pattern/op/wrap_type.hpp>
+#include <transformations/utils/utils.hpp>
 #include <ie/ie_common.h>
 
 #include "gna_plugin_log.hpp"
@@ -46,6 +47,14 @@ static bool InsertReshape(
     }
 
     auto first_node = iter->second.get_node_shared_ptr();
+    size_t add_input_index = 0;
+    iter = pattern_map.find(add1);
+    std::shared_ptr<ngraph::Node> add_node = nullptr;
+    if (iter != pattern_map.end()) {
+        add_node = iter->second.get_node_shared_ptr();
+        add_input_index = std::dynamic_pointer_cast<ngraph::opset8::MatMul>(add_node->get_input_node_shared_ptr(0)) ? 1 : 0;
+    }
+
     std::vector<std::shared_ptr<ngraph::Node>> nodes = { matmul_node };
     for (auto node : {add2, add1, fake_quantize, transpose}) {
         iter = pattern_map.find(node);
@@ -103,6 +112,21 @@ static bool InsertReshape(
     }
 
     if (need_reshape_after) {
+        // If the last node is an Add layer, check if it doesn't require inserting a reshape
+        // to align its dimensions with reshaped matmul's dimeensions
+        if (add_node) {
+            auto add_input = add_node->get_input_node_shared_ptr(add_input_index);
+            auto consumers = add_input->output(0).get_target_inputs();
+            std::vector<int> before_shape = {-1, static_cast<int>(add_input->get_output_shape(0).back())};
+            auto reshape_add_input = ngraph::op::util::make_try_fold<ngraph::opset8::Reshape>(add_input,
+            std::make_shared<ngraph::opset8::Constant>(ngraph::element::Type_t::i64, ngraph::Shape{before_shape.size()}, before_shape), false);
+            reshape_add_input->set_friendly_name(reshape_add_input->get_friendly_name());
+            ngraph::copy_runtime_info(nodes.back(), reshape_add_input);
+            for (auto consumer : consumers) {
+                consumer.replace_source_output(reshape_add_input);
+            }
+        }
+
         auto reshape_after_node = std::make_shared<ngraph::opset8::Reshape>(nodes.back(),
             std::make_shared<ngraph::opset8::Constant>(ngraph::element::Type_t::i64,
                 ngraph::Shape{last_node_shape.size()}, last_node_shape), false);
@@ -188,6 +212,9 @@ InsertReshapeAroundMatmulWithAdd::InsertReshapeAroundMatmulWithAdd() {
     auto matmul = CreateMatmulPattern(input, matmul1, matmul2);
     auto add_input = ngraph::pattern::any_input();
     auto add1 = ngraph::pattern::wrap_type<ngraph::opset8::Add>({matmul, add_input}, pred);
+    // TODO: matcher based on position of input doesn't really work, it doesn't matter where is
+    // each input placed, it only matters what inputs, and the matcher checks all possible combinations
+    // of input positions
     auto add2 = ngraph::pattern::wrap_type<ngraph::opset8::Add>({add_input, matmul}, pred);
     auto add = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{add1, add2});
 

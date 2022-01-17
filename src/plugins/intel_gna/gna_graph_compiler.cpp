@@ -157,27 +157,61 @@ void GNAGraphCompiler::fillSplitConnections(InferenceEngine::CNNLayerPtr layer) 
                 continue;
             }
 
-            for (int idx : outFunctionalLayer.second) {
-                auto dataOutput = outFunctionalLayer.first->insData[idx].lock();
+            // Find all functional layers connected to the previous (last non-functional) layer
+            auto prev_layer = CNNNetPrevLayer(outFunctionalLayer.first);
+            if (prev_layer == layer) {
+                for (int idx : outFunctionalLayer.second) {
+                    auto dataOutput = outFunctionalLayer.first->insData[idx].lock();
 
-                padding = std::max(padding, LayerInfo(outFunctionalLayer.first).paddingSize())
-                                                            * dataOutput->getPrecision().size();
-                output_layer_size =
-                        InferenceEngine::details::product(begin(dataOutput->getDims()),
-                                                        end(dataOutput->getDims())) * dataOutput->getPrecision().size();
+                    padding = std::max(padding, LayerInfo(outFunctionalLayer.first).paddingSize())
+                                                                * dataOutput->getPrecision().size();
+                    output_layer_size =
+                            InferenceEngine::details::product(begin(dataOutput->getDims()),
+                                                            end(dataOutput->getDims())) * dataOutput->getPrecision().size();
 
-                if (LayerInfo(outFunctionalLayer.first).isConvolutionFilter()) {
-                    size_t aligned64_offset = outFunctionalLayer.first->GetParamAsInt("offset");
-                    layerInfoItem.splitOutputLayers.emplace_back(
-                        outFunctionalLayer.first,
-                        idx,
-                        aligned64_offset * dataOutput->getPrecision().size(),
-                        output_layer_size);
-                } else {
-                    layerInfoItem.splitOutputLayers.emplace_back(
-                        outFunctionalLayer.first, idx, split_size, output_layer_size);
+                    if (LayerInfo(outFunctionalLayer.first).isConvolutionFilter()) {
+                        size_t aligned64_offset = outFunctionalLayer.first->GetParamAsInt("offset");
+                        layerInfoItem.splitOutputLayers.emplace_back(
+                            outFunctionalLayer.first,
+                            idx,
+                            aligned64_offset * dataOutput->getPrecision().size(),
+                            output_layer_size);
+                    } else {
+                        layerInfoItem.splitOutputLayers.emplace_back(
+                            outFunctionalLayer.first, idx, split_size, output_layer_size);
+                    }
                 }
-             }
+            } else {
+                for (size_t k = 0; k < prev_layer->outData.size(); ++k) {
+                    for (auto const& curr_layer_it : getInputTo(prev_layer->outData[k])) {
+                        auto curr_layer = curr_layer_it.second;
+                        auto ins_idx  = CNNLayerFindInsDataIdxes(prev_layer->outData[k], curr_layer);
+                        for (int idx : ins_idx) {
+                            auto dataOutput = curr_layer->insData[idx].lock();
+
+                            padding = std::max(padding, LayerInfo(curr_layer).paddingSize()) *
+                                      dataOutput->getPrecision().size();
+                            output_layer_size = InferenceEngine::details::product(begin(dataOutput->getDims()),
+                                                                                  end(dataOutput->getDims())) *
+                                                dataOutput->getPrecision().size();
+
+                            if (LayerInfo(curr_layer).isConvolutionFilter()) {
+                                size_t aligned64_offset = curr_layer->GetParamAsInt("offset");
+                                layerInfoItem.splitOutputLayers.emplace_back(
+                                    curr_layer,
+                                    idx,
+                                    aligned64_offset * dataOutput->getPrecision().size(),
+                                    output_layer_size);
+                            } else {
+                                layerInfoItem.splitOutputLayers.emplace_back(curr_layer,
+                                                                             idx,
+                                                                             split_size,
+                                                                             output_layer_size);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // in case of unconnected split - we need properly increment size

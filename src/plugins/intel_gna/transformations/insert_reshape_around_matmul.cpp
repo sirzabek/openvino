@@ -113,7 +113,7 @@ static bool InsertReshape(
 
     if (need_reshape_after) {
         // If the last node is an Add layer, check if it doesn't require inserting a reshape
-        // to align its dimensions with reshaped matmul's dimeensions
+        // to align its dimensions with reshaped matmul's dimensions
         if (add_node) {
             auto add_input = add_node->get_input_node_shared_ptr(add_input_index);
             auto consumers = add_input->output(0).get_target_inputs();

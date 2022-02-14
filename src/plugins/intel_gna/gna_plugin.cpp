@@ -691,6 +691,7 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
         manager.register_pass<SwapInputMatMulWithBias>();
         manager.register_pass<SwapInputMatMul>();
         manager.register_pass<HandleTransposesAroundMatMul>();
+        manager.register_pass<TransposeDecomposition>();
         manager.register_pass<InsertTransposeAfterConvOrPool>();
         manager.register_pass<Unfuse2dto4dReshapeAndTranspose>();
         manager.register_pass<Unfuse4dto2dReshapeAndTranspose>();

@@ -68,4 +68,14 @@ public:
   HandleTransposesAroundMatMul();
 };
 
+/**
+ * @ingroup ie_transformation_common_api
+ * @brief MvnDecomposition transformation breaks MVN layers into primitive operations.
+ */
+class TransposeDecomposition : public ngraph::pass::FunctionPass {
+public:
+    NGRAPH_RTTI_DECLARATION;
+    bool run_on_function(std::shared_ptr<ngraph::Function> f) override;
+};
+
 } // namespace GNAPluginNS

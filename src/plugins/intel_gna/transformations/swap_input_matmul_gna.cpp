@@ -76,10 +76,10 @@ static void SwapAndTransposeInputs(
         second_input_const = true;
     }
 
-    auto input1 = (!first_input_const && second_input_const) ? matmul_node->input_value(1) : transpose_matmul_input(1);
-    auto input2 = first_input_const ? matmul_node->input_value(0) : transpose_matmul_input(0);
-    bool transpose_1 = (!first_input_const && second_input_const) ? !matmul_node->get_transpose_b() : matmul_node->get_transpose_b();
-    bool transpose_2 = first_input_const ? !matmul_node->get_transpose_a() : matmul_node->get_transpose_a();
+    auto input1 = (second_input_const || matmul_node->get_transpose_b()) ? matmul_node->input_value(1) : transpose_matmul_input(1);
+    auto input2 = (first_input_const || matmul_node->get_transpose_a()) ? matmul_node->input_value(0) : transpose_matmul_input(0);
+    bool transpose_1 = second_input_const ? !matmul_node->get_transpose_b() : false;
+    bool transpose_2 = first_input_const ? !matmul_node->get_transpose_a() : false;
     std::shared_ptr<ngraph::Node> new_node = std::make_shared<ngraph::opset8::MatMul>(input1, input2, transpose_1, transpose_2);
     new_node->set_friendly_name(matmul_node->get_friendly_name() + "/swap_inputs");
     new_ops.push_back(new_node);

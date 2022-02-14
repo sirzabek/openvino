@@ -18,6 +18,11 @@
 
 namespace GNAPluginNS {
 
+NGRAPH_RTTI_DEFINITION(HandleTransposesAroundMatMul, "HandleTransposesAroundMatMul", 0);
+NGRAPH_RTTI_DEFINITION(HandleTransposeBeforeMatMul, "HandleTransposeBeforeMatMul", 0);
+NGRAPH_RTTI_DEFINITION(HandleTransposeAfterMatMul, "HandleTransposeAfterMatMul", 0);
+NGRAPH_RTTI_DEFINITION(TransposeDecomposition, "TransposeDecomposition", 0);
+
 namespace {
 
 void ReplaceTransposeWithReshape(std::shared_ptr<ngraph::Node> transpose_node) {
@@ -165,9 +170,9 @@ HandleTransposeBeforeMatMul::HandleTransposeBeforeMatMul() {
             }
 
             if (prev_node) {
-                if (GNALimitations::IsTransposeSupported(prev_node->get_output_shape(0))) {
+                //if (GNALimitations::IsTransposeSupported(prev_node->get_output_shape(0))) {
                     InsertTranspose(prev_node, matmul_node->get_friendly_name(), true);
-                }
+                //}
             }
         }
         return true;
@@ -229,5 +234,130 @@ HandleTransposesAroundMatMul::HandleTransposesAroundMatMul() {
     add_matcher<HandleTransposeBeforeMatMul>();
     add_matcher<HandleTransposeAfterMatMul>();
 }
+
+bool TransposeDecomposition::run_on_function(std::shared_ptr<ngraph::Function> f) {
+    // Traverse nGraph Function in topological order
+    bool is_graph_modfied = false;
+    for (auto& node : f->get_ordered_ops()) {
+        auto transpose = std::dynamic_pointer_cast<ngraph::opset8::Transpose>(node);
+        if (nullptr == transpose) {
+            continue;
+        }
+
+        const ngraph::Output<ngraph::Node>& parent = transpose->input_value(0);
+        auto input_shape = parent.get_shape();
+        auto output_shape = transpose->output(0).get_shape();
+        const ngraph::Output<ngraph::Node>& transpose_order = transpose->input_value(1);
+        auto transpose_order_dim = transpose_order.get_shape().size();
+        if (transpose_order_dim != 1)
+            continue;
+        auto const_with_order_values = std::dynamic_pointer_cast<ngraph::opset8::Constant>(transpose_order.get_node_shared_ptr());
+        if (!const_with_order_values)
+            continue;
+        const int64_t* order = const_with_order_values->get_data_ptr<int64_t>();
+        if (input_shape.size() < 2) {
+            continue;
+        }
+        size_t N = 1;
+        size_t C = 1;
+        size_t H = input_shape[input_shape.size() - 2];
+        size_t W = input_shape[input_shape.size() - 1];
+        if (input_shape.size() == 4) {
+            N = input_shape[0];
+            C = input_shape[1];
+        } else if (input_shape.size() == 3) {
+            C = input_shape[0];
+        }
+
+        if (N != 1) {
+            continue;   // Batch case not yet implemented
+        } else {
+
+            // test for simple 2D transpose
+            if (((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 3) && (order[2] == 1) && (order[3] == 2))
+                || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 3) && (order[3] == 1))
+                || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 1) && (order[2] == 3) && (order[3] == 2) && (input_shape[1] == 1))
+                || ((input_shape.size() == 3) && (order[0] == 2) && (order[1] == 0) && (order[2] == 1))
+                || ((input_shape.size() == 3) && (order[0] == 1) && (order[1] == 2) && (order[2] == 0))
+                || ((input_shape.size() == 3) && (order[0] == 0) && (order[1] == 2) && (order[2] == 1) && (input_shape[0] == 1))
+                || ((input_shape.size() == 2) && (order[0] == 1) && (order[1] == 0))) {
+
+                size_t H_new = H;
+                size_t W_new = W;
+                if ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 3) && (order[2] == 1) && (order[3] == 2)) {
+                    H_new = C * H;
+                } else if ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 3) && (order[3] == 1)) {
+                    H_new = C;
+                    W_new = H * W;
+                } else if ((input_shape.size() == 3) && (order[0] == 2) && (order[1] == 0) && (order[2] == 1)) {
+                    H_new = C * H;
+                } else if ((input_shape.size() == 3) && (order[0] == 1) && (order[1] == 2) && (order[2] == 0)) {
+                    H_new = C;
+                    W_new = H * W;
+                }
+
+                // GNA-incompatible transpose
+                //if ((H_new % 8) == 0) {
+                if (H_new == 80) {
+                    // find prime factors of W_new
+                    std::vector<size_t> factors;
+                    size_t W_tmp = W_new;
+                    size_t p = 2;
+                    while (W_tmp * W_tmp >= p * p) {
+                        if ((W_tmp % p) == 0) {
+                            factors.push_back(p);
+                            W_tmp = W_tmp / p;
+                        } else {
+                            p++;
+                        }
+                    }
+                    if (W_tmp > 1) {
+                        factors.push_back(W_tmp);
+                    }
+                    // check if there are any factors too large for GNA transpose
+                    bool feasible = true;
+                    for (size_t i = 0; i < factors.size(); i++) {
+                        if (factors[i] > 8) {
+                            feasible = false;
+                        }
+                    }
+                    // perform feasible transformations
+                    if (feasible) {
+                        // combine prime factors if possible
+                        std::vector<size_t> combined_factors;
+                        size_t new_factor = 1;
+                        for (size_t i = 0; i < factors.size(); i++) {
+                            size_t product = new_factor * factors[i];
+                            if (product > 8) {
+                                combined_factors.push_back(new_factor);
+                                new_factor = factors[i];
+                            } else {
+                                new_factor = product;
+                            }
+                        }
+                        combined_factors.push_back(new_factor);
+                        // generate transpose transformation
+                        ngraph::OutputVector upstream;
+                        upstream.push_back(parent);
+                        for (size_t i = 0; i < combined_factors.size(); i++) {
+                            auto new_reshape = std::make_shared<ngraph::opset8::Reshape>(upstream[0],
+                                ngraph::opset8::Constant::create(ngraph::element::i64, ngraph::Shape{2}, {H_new*W_new/combined_factors[i], combined_factors[i]})->output(0),false);
+                            auto new_transpose = std::make_shared<ngraph::opset8::Transpose>(new_reshape->output(0),
+                                ngraph::opset8::Constant::create(ngraph::element::Type_t::i64, ngraph::Shape{2}, {1, 0}));
+                            upstream[0] = new_transpose->output(0);
+                        }
+                        auto new_reshape = std::make_shared<ngraph::opset8::Reshape>(upstream[0],
+                            ngraph::opset8::Constant::create(ngraph::element::i64, ngraph::Shape{output_shape.size()}, output_shape)->output(0),false);
+                        ngraph::replace_node(transpose, new_reshape);
+                        is_graph_modfied = true;
+                        continue;                    
+                    }
+                }
+            }
+        }
+    }
+    return is_graph_modfied;
+}
+
 
 } // namespace GNAPluginNS

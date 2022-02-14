@@ -41,17 +41,17 @@ struct InferRequestStruct {
 };
 
 /**
- * @brief Check number of input files and model network inputs
- * @param numInputs number model inputs
- * @param numInputFiles number of input files
+ * @brief Check number of files and model network inputs/outputs
+ * @param numInputs number model inputs/outputs
+ * @param numInputFiles number of input/output files
  * @return none.
  */
-void check_number_of_inputs(size_t numInputs, size_t numInputFiles) {
-    if (numInputs != numInputFiles) {
-        throw std::logic_error("Number of network inputs (" + std::to_string(numInputs) +
+void check_number_of_files(size_t num_nodes, size_t num_files) {
+    if (num_nodes != num_files) {
+        throw std::logic_error("Number of network nodes (" + std::to_string(num_nodes) +
                                ")"
-                               " is not equal to number of input files (" +
-                               std::to_string(numInputFiles) + ")");
+                               " is not equal to number of files (" +
+                               std::to_string(num_files) + ")");
     }
 }
 
@@ -367,12 +367,6 @@ void sum_performance_counters(std::map<std::string, ov::ProfilingInfo> const& pe
     totalRunsOnHw += runOnHw;
 }
 
-/**
- * @brief Split string by delimeter
- * @param s input string
- * @param delim delimeter
- * @return vector of chunks
- */
 std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> result;
     std::stringstream ss(s);
@@ -385,37 +379,20 @@ std::vector<std::string> split(const std::string& s, char delim) {
 }
 
 /**
- * @brief Concat strings using delimeter
- * @param chunks input chunks
- * @param delim delimeter
- * @return concatenated string
- */
-std::string concat(const std::vector<std::string>& chunks, char delim) {
-    std::stringstream ss;
-    for (auto&& chunk : chunks) {
-        if (!ss.str().empty()) {
-            ss << delim;
-        }
-        ss << chunk;
-    }
-    return ss.str();
-}
-
-/**
- * @brief Check whether name is present in node vector
- * @param nodes nodes
- * @param node_name name
+ * @brief Check whether input name is present in model
+ * @param inputs model inputs
+ * @param str input name
  * @return false or true
  */
-bool check_name(const ov::OutputVector& nodes, const std::string& node_name) {
+bool check_name(const ov::OutputVector& nodes,
+                const std::string& node_name) {
     std::vector<std::string> any_names;
     bool count = false;
     for (auto& node : nodes) {
         any_names.push_back(node.get_any_name());
         auto names = node.get_names();
         count = std::count(names.begin(), names.end(), node_name);
-        if (count)
-            break;
+        if (count) break;
     }
     if (!count) {
         std::stringstream ss;
@@ -433,6 +410,84 @@ bool check_name(const ov::OutputVector& nodes, const std::string& node_name) {
 /**
  * @brief Parse scale factors per input
  * Format : <input_name1>=<sf1>,<input2>=<sf2> or just <sf>
+ * @param inputs model inputs
+ * @param str values_string input string
+ * @return map of scale factors per input
+ */
+std::map<std::string, float> parse_scale_factors(const ov::OutputVector& inputs,
+                                                 const std::string& values_string) {
+    auto check_sf = [&] (float sf, const std::string& input_name = "") {
+        if (sf <= 0.0f) {
+            throw std::logic_error("Scale factor for input '" + input_name +
+                                   "' (counting from zero) is out of range (must be positive).");
+        }
+    };
+    std::map<std::string, float> result;
+    auto scale_factor_strings = split(values_string, ',');
+    for (auto& scale_factor_string : scale_factor_strings) {
+        auto values = split(scale_factor_string, ':');
+        if (values.size() == 2) {
+            auto input_name = values.at(0);
+            check_name(inputs, input_name);
+            auto scale_factor = std::stof(values.at(1));
+            check_sf(scale_factor, input_name);
+            result[input_name] = scale_factor;
+        } else if (values.size() == 1) {
+            auto scale_factor = std::stof(values.at(0));
+            check_sf(scale_factor);
+            for (auto& input : inputs) {
+                result[input.get_any_name()] = scale_factor;
+            }
+        } else if (values.size() != 0) {
+            throw std::runtime_error("Unknown string format: " + values_string);
+ * @brief Concat strings using delimeter
+ * @param chunks input chunks
+ * @param delim delimeter
+ * @return concatenated string
+ */
+std::string concat(const std::vector<std::string>& chunks, char delim) {
+    std::stringstream ss;
+    for (auto&& chunk : chunks) {
+        if (!ss.str().empty()) {
+            ss << delim;
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief Parse string of file names
+ * Format: <input_name1>:<file1.ark>,<input_name2>:<file2.ark> or <file.ark> or <file.npz>
+ * @param inputs model inputs
+ * @param str values_string input string
+ * @return vector of file names
+ */
+std::map<std::string, std::string> parse_file_names(const ov::OutputVector& nodes,
+                                                    const std::string& values_string) {
+    std::map<std::string, std::string> result;
+    auto file_name_strings = split(values_string, ',');
+    uint8_t file_id = 0;
+    for (auto& file_name_string : file_name_strings) {
+        auto values = split(file_name_string, ':');
+        if (values.size() == 2) {
+            auto node_name = values.at(0);
+            check_name(nodes, node_name);
+            auto file_name = values.at(1);
+            result[node_name] = file_name;
+        } else if (values.size() == 1) {
+            auto file_name = values.at(0);
+            result[nodes.at(file_id++).get_any_name()] = file_name;
+        } else if (values.size() != 0) {
+            throw std::runtime_error("Unknown string format: " + values_string);
+        }
+    }
+    check_number_of_files(nodes.size(), result.size());
+    return result;
+}
+
+/**
+ * @brief Parse scale factors per input
+ * Format : <input_name1>:<sf1>,<input2>:<sf2> or just <sf>
  * @param inputs model inputs
  * @param values_string values_string input string
  * @return map of scale factors per input

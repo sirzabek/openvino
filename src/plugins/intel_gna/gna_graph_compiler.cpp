@@ -1850,6 +1850,13 @@ void GNAGraphCompiler::PWLPrimitive(InferenceEngine::CNNLayerPtr layer) {
 
         num_columns = (w_dim_in == 1) ? h_dim_in * c_dim_in * b_dim_in : w_dim_in * c_dim_in * b_dim_in;
         num_rows = (w_dim_in == 1) ? w_dim_in : h_dim_in;
+    } else if (inputs->getDims().size() == 3) {
+        uint32_t w_dim_in = GetDataDimSize(inputs, 1);
+        uint32_t h_dim_in = GetDataDimSize(inputs, 2);
+        uint32_t c_dim_in = GetDataDimSize(inputs, 3);
+
+        num_columns = (w_dim_in == 1) ? h_dim_in * c_dim_in : w_dim_in * c_dim_in;
+        num_rows = (w_dim_in == 1) ? w_dim_in : h_dim_in;
     } else {
         num_columns = GetDataDimSize(inputs, 2);
         num_rows = GetDataDimSize(inputs, 1);

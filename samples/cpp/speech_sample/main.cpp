@@ -82,23 +82,6 @@ int main(int argc, char* argv[]) {
                     auto output = model->add_output(outputs[i], ports[i]);
                     output.add_names({outputs[i], outputs[i] + ":" + std::to_string(ports[i])});
                 }
-                // clean up other outputs
-                ov::ResultVector results_to_remove;
-                for (auto result : model->get_results()) {
-                    bool is_name_found = false;
-                    for (const std::string &name : result->get_input_tensor(0).get_names()) {
-                        if (std::count(outputs.begin(), outputs.end(), name) != 0) {
-                            is_name_found = true;
-                            break;
-                        }
-                    }
-                    if (!is_name_found) {
-                        results_to_remove.push_back(result);
-                    }
-                }
-                for (auto result : results_to_remove) {
-                    model->remove_result(result);
-                }
             }
             ov::preprocess::PrePostProcessor proc(model);
             const auto& inputs = model->inputs();
@@ -356,14 +339,28 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        std::map<std::string, FileInfo> o_file_info_map;
-        std::map<std::string, FileInfo> r_file_info_map;
+        auto filter_outputs = [&](const ov::OutputVector& nodes) {
+            if (outputs.empty()) {
+                return nodes;
+            }
+            ov::OutputVector filtered_outputs{};
+            for (auto output : nodes) {
+                for (const std::string &name : output.get_names()) {
+                    if(std::count(outputs.begin(), outputs.end(), name) != 0) {
+                        filtered_outputs.push_back(output);
+                    }
+                }
+            }
+            return filtered_outputs;
+        };
 
+        std::map<std::string, FileInfo> o_file_info_map;
         if (!FLAGS_o.empty()) {
-            fill_file_info(parse_file_names(model->outputs(), FLAGS_o), o_file_info_map);
+            fill_file_info(parse_file_names(filter_outputs(model->outputs()), FLAGS_o), o_file_info_map);
         }
+        std::map<std::string, FileInfo> r_file_info_map;
         if (!FLAGS_r.empty()) {
-            fill_file_info(parse_file_names(model->outputs(), FLAGS_r), r_file_info_map);
+            fill_file_info(parse_file_names(filter_outputs(model->outputs()), FLAGS_r), r_file_info_map);
         }
 
         auto get_num_scores_per_frame = [&](const std::string& name) -> const size_t {

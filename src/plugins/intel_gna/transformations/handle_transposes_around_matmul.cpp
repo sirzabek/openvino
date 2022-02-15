@@ -298,7 +298,7 @@ bool TransposeDecomposition::run_on_function(std::shared_ptr<ngraph::Function> f
 
                 // GNA-incompatible transpose
                 //if ((H_new % 8) == 0) {
-                if (H_new == 80) {
+                if (H_new == 80 && W_new == 64) {
                     // find prime factors of W_new
                     std::vector<size_t> factors;
                     size_t W_tmp = W_new;

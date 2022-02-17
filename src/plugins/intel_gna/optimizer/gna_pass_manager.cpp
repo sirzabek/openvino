@@ -278,6 +278,9 @@ void InsertDiagonalLayerPass::run() {
         if (LayerInfo(l).isActivation()) {
             if (LayerInfo(prevLayer).has32BOutput()) {
                 continue;
+            } else if (LayerInfo(l).isFakeQuantize() || LayerInfo(prevLayer).isInput()) {
+                CNNNetworkRemoveLayer(l, false);
+                continue;
             }
         } else {
             auto eltwise = dynamic_cast<InferenceEngine::EltwiseLayer *>(l.get());

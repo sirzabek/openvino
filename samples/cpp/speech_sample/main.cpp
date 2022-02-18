@@ -251,7 +251,7 @@ int main(int argc, char* argv[]) {
         };
         gna_plugin_config[ov::intel_gna::execution_target.name()] = parse_target(FLAGS_exec_target);
         gna_plugin_config[ov::intel_gna::compile_target.name()] = parse_target(FLAGS_compile_target);
-        gna_plugin_config[ov::intel_gna::memory_reuse.name()] = false;
+        gna_plugin_config[ov::intel_gna::memory_reuse.name()] = true;
         gna_plugin_config[ov::intel_gna::pwl_max_error_percent.name()] = FLAGS_pwl_me;
         // -----------------------------------------------------------------------------------------------------
         // --------------------------- Write model to file --------------------------------------------------

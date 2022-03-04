@@ -229,11 +229,11 @@ void make_gna_pwl(const DnnActivation&  fun,
             int32_t x_upper = INT32_MAX;
             int16_t y_lower = y_min;
             int16_t y_upper = y_max;
-            if ((fun == kActFakeQuantize || fun == kActIdentity) && fun.fqParams.set) {
-                x_lower = std::max(static_cast<int64_t>(*fun.fqParams.input_low * in_scale), static_cast<int64_t>(x_lower));
-                x_upper = std::min(static_cast<int64_t>(*fun.fqParams.input_high * in_scale), static_cast<int64_t>(x_upper));
-                y_lower = std::max(static_cast<int32_t>(*fun.fqParams.input_low * out_scale), static_cast<int32_t>(y_lower));
-                y_upper = std::min(static_cast<int32_t>(*fun.fqParams.input_high * out_scale), static_cast<int32_t>(y_upper));
+            if (fun == kActFakeQuantize && fun.fqParams.set) {
+                x_lower = std::max(FLOAT_TO_INT64(*fun.fqParams.input_low * in_scale), static_cast<int64_t>(x_lower));
+                x_upper = std::min(FLOAT_TO_INT64(*fun.fqParams.input_high * in_scale), static_cast<int64_t>(x_upper));
+                y_lower = std::max(FLOAT_TO_INT32(*fun.fqParams.input_low * out_scale), static_cast<int32_t>(y_lower));
+                y_upper = std::min(FLOAT_TO_INT32(*fun.fqParams.input_high * out_scale), static_cast<int32_t>(y_upper));
             }
             auto n_segments = 2;
             if (fun == kActKaldiLstmClipping) {
@@ -271,7 +271,8 @@ void make_gna_pwl(const DnnActivation&  fun,
             s = gna_slope(1.0, in_scale, out_scale);
             gna_pwl[1].slope = FLOAT_TO_INT16(s.slope * s.slope_scale);
             gna_pwl[1].xBase = gna_pwl[1].xBase | s.slope_scale_index;
-            print_segment((int32_t)(gna_pwl[1].xBase & XBASEMASK) / in_scale, gna_pwl[1].yBase / out_scale, 1.0);
+            auto testSlope = static_cast<double>(FLOAT_TO_INT16(s.slope * s.slope_scale)) / s.slope_scale * in_scale / out_scale;
+            print_segment((int32_t)(gna_pwl[1].xBase & XBASEMASK) / in_scale, gna_pwl[1].yBase / out_scale, testSlope);
 
             if (INT32_MAX > x_upper) {  // need a right segment
                 gna_pwl.push_back({

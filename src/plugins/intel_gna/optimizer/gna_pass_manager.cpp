@@ -269,6 +269,7 @@ static std::vector<CNNLayerPtr> getCandidatesForIdentityInsertion(const CNNLayer
 void InsertDiagonalLayerPass::run() {
     OV_ITT_SCOPED_TASK(itt::domains::GNA_LT, "InsertDiagonalLayerPass");
     bool lowPrecision = getPassManager()->isLowPrecision();
+    auto quantized = InferenceEngine::getInjectedData<QuantizedLayerParams>(pLayers->front());
 
     for (auto & l : *pLayers) {
         if (l->insData.empty()) continue;
@@ -278,7 +279,7 @@ void InsertDiagonalLayerPass::run() {
         if (LayerInfo(l).isActivation()) {
             if (LayerInfo(prevLayer).has32BOutput()) {
                 continue;
-            } else if (LayerInfo(l).isFakeQuantize() || LayerInfo(prevLayer).isInput()) {
+            } else if (quantized && (LayerInfo(l).isFakeQuantize() || LayerInfo(prevLayer).isInput())) {
                 CNNNetworkRemoveLayer(l, false);
                 continue;
             }

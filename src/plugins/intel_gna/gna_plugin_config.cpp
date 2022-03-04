@@ -166,7 +166,7 @@ OPENVINO_SUPPRESS_DEPRECATED_END
             set_target(value);
         } else if (key == GNA_CONFIG_KEY(COMPACT_MODE) || key ==  ov::intel_gna::memory_reuse) {
             if (value == PluginConfigParams::YES) {
-                gnaFlags.compact_mode = true;
+                gnaFlags.compact_mode = false;
             } else if (value == PluginConfigParams::NO) {
                 gnaFlags.compact_mode = false;
             } else {

@@ -113,7 +113,7 @@ static void insertDiagonalLayerBetween(InferenceEngine::CNNLayerPtr prevLayer,
  * @returns pointer to newly created COPYLayer
  */
 static CNNLayerPtr InsertCopyLayer(CNNLayerPtr prevLayer, CNNLayerPtr nextLayer, int beforeIdx,
-                                   std::shared_ptr<IPassManager> passmanager,  std::string copyLayerType) {
+                                   std::shared_ptr<IPassManager> passmanager,  const std::string& copyLayerType) {
     OV_ITT_SCOPED_TASK(itt::domains::GNA_LT, "InsertCopyLayer");
     auto quantized = InferenceEngine::getInjectedData<QuantizedLayerParams>(prevLayer);
     std::string copyName = copyLayerType + std::string("_") + std::to_string(passmanager->getIntVar(copyLayersCounter)++);
@@ -269,7 +269,6 @@ static std::vector<CNNLayerPtr> getCandidatesForIdentityInsertion(const CNNLayer
 void InsertDiagonalLayerPass::run() {
     OV_ITT_SCOPED_TASK(itt::domains::GNA_LT, "InsertDiagonalLayerPass");
     bool lowPrecision = getPassManager()->isLowPrecision();
-    auto quantized = InferenceEngine::getInjectedData<QuantizedLayerParams>(pLayers->front());
 
     for (auto & l : *pLayers) {
         if (l->insData.empty()) continue;
@@ -278,9 +277,6 @@ void InsertDiagonalLayerPass::run() {
         });
         if (LayerInfo(l).isActivation()) {
             if (LayerInfo(prevLayer).has32BOutput()) {
-                continue;
-            } else if (quantized && (LayerInfo(l).isFakeQuantize() || LayerInfo(prevLayer).isInput())) {
-                CNNNetworkRemoveLayer(l, false);
                 continue;
             }
         } else {
@@ -875,6 +871,23 @@ void InsertCopyLayerPass::run() {
     // Concat has multiple connections to the same input
     // Subgraph has only non-functional layers
     for (auto & l : *pLayers) {
+        if (LayerInfo(l).isCrop() && !LayerInfo(l).isCropAffined() && LayerInfo(l).isOutput()) {
+            auto quantized = InferenceEngine::getInjectedData<QuantizedLayerParams>(l);
+            std::string copyName = l->name;
+            std::string copyDataName = l->outData[0]->getName();
+            gnalog() << "Inserted " << copyName << " after: " << l->name << std::endl;
+
+            CNNLayerPtr copyLayer = std::make_shared<GenericLayer>(LayerParams({copyName, CopyLayerName, Precision::FP32}));
+            auto dataPtr = std::make_shared<Data>(copyName, l->outData[0]->getTensorDesc());
+            auto copyWithQuant = quantized ?
+                                 InferenceEngine::injectData<QuantizedLayerParams>(copyLayer) :
+                                 copyLayer;
+            getCreatorLayer(dataPtr) = copyWithQuant;
+            copyWithQuant->outData.push_back(dataPtr);
+            getInputTo(l->outData[0])[copyName] = copyWithQuant;
+            copyWithQuant->insData.push_back(l->outData[0]);
+        }
+
         if (!LayerInfo(l).isConcat()) continue;
 
         // Insert copy layers after concat inputs with multiple connections to concat
@@ -2061,9 +2074,10 @@ void MoveFakeQuantizeLayerIntoQuantParamsPass :: run() {
         auto skipNonFunctional = [](CNNLayerPtr layer) {
             return LayerInfo(layer).isNonFunctional();
         };
-        // Don't fuse FQ if it's the output layer for the network
-        if (CNNNetGetAllNextLayersSkipCertain(layer, -1, skipNonFunctionalOrMemory).empty()) {
-            return false;
+
+        auto prevLayer = CNNNetPrevLayerSkipCertain(layer, 0, skipNonFunctional);
+        if (LayerInfo(prevLayer).isActivation() || LayerInfo(prevLayer).isConst() || LayerInfo(prevLayer).isMemory() || LayerInfo(prevLayer).isInput()) {
+            return true;
         }
         // Fuse FQ if it's not required to change precision from int32 to int16
         auto nextLayers = CNNNetGetAllNextLayersSkipCertain(layer, -1, skipNonFunctional);

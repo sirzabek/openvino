@@ -95,6 +95,7 @@ ngraph::pass::ConvertMatMulToFC::ConvertMatMulToFC() {
             auto transpose = register_new_node<ngraph::opset1::Transpose>(
                     node, opset1::Constant::create(element::i64, Shape {transpose_order.size()}, transpose_order));
             transpose->set_friendly_name(transpose_name);
+
             return transpose;
         };
 
@@ -112,7 +113,7 @@ ngraph::pass::ConvertMatMulToFC::ConvertMatMulToFC() {
         auto fq_after_const = std::dynamic_pointer_cast<opset1::FakeQuantize>(fc_input_b.get_node_shared_ptr());
         bool is_fq_after_const = fq_after_const &&
             std::dynamic_pointer_cast<opset1::Constant>(fc_input_b.get_node_shared_ptr()->input_value(0).get_node_shared_ptr());
-        if ((std::dynamic_pointer_cast<opset1::Constant>    (fc_input_b.get_node_shared_ptr())  || is_fq_after_const) &&
+        if ((std::dynamic_pointer_cast<opset1::Constant>(fc_input_b.get_node_shared_ptr()) || is_fq_after_const) &&
              std::count_if(shape_b.begin(), shape_b.end(), [](size_t x) {
                 return x != 1;
             }) <= 2) {
@@ -139,8 +140,38 @@ ngraph::pass::ConvertMatMulToFC::ConvertMatMulToFC() {
                 fc_input_b = create_transpose(constant, matmul->get_friendly_name() + "/transpose_b");
                 new_ops.push_back(fc_input_b.get_node_shared_ptr());
                 if (fq_after_const) {
-                    fc_input_b = fq_after_const->clone_with_new_inputs(OutputVector{fc_input_b, fq_after_const->input_value(1),
-                        fq_after_const->input_value(2), fq_after_const->input_value(3), fq_after_const->input_value(4)});
+                    auto fq_val_shape = fq_after_const->input_value(1).get_shape();
+                    // if FQ contains per-channel statistics it'll be incorrect after weights transposition,
+                    // replace it by per-tensor statistics
+                    if (fq_val_shape.size() == 2 && fq_val_shape[0] > 1) {
+                        std::vector<float> values(fq_after_const->get_input_size() - 1);
+                        ov::element::Type el_type = ov::element::f32;
+                        for (size_t fq_in_ix = 1; fq_in_ix < values.size(); ++fq_in_ix) {
+                            auto const_node = std::dynamic_pointer_cast<ngraph::opset8::Constant>(
+                                fq_after_const->input_value(fq_in_ix).get_node_shared_ptr());
+
+                            if (const_node == nullptr) {
+                                throw ngraph_error("FakeQuantize " + fq_after_const->get_friendly_name() +
+                                    " has invalid type of input " + std::to_string(fq_in_ix));
+                            }
+
+                            el_type = const_node->get_element_type();
+                            auto data = const_node->get_vector<float>();
+                            auto val_it = fq_in_ix % 2 ? std::min_element(std::begin(data), std::end(data)) :
+                                std::max_element(std::begin(data), std::end(data));
+                            values[fq_in_ix - 1] = *val_it;
+                        }
+
+                        fc_input_b = fq_after_const->clone_with_new_inputs({fc_input_b,
+                            ngraph::opset8::Constant::create(el_type, {1}, {values[0]}),
+                            ngraph::opset8::Constant::create(el_type, {1}, {values[1]}),
+                            ngraph::opset8::Constant::create(el_type, {1}, {values[2]}),
+                            ngraph::opset8::Constant::create(el_type, {1}, {values[3]})});
+                    } else {
+                        fc_input_b = fq_after_const->clone_with_new_inputs(OutputVector{fc_input_b, fq_after_const->input_value(1),
+                            fq_after_const->input_value(2), fq_after_const->input_value(3), fq_after_const->input_value(4)});
+                    }
+
                     new_ops.push_back(fc_input_b.get_node_shared_ptr());
                 }
             }

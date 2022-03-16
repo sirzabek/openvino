@@ -1270,7 +1270,8 @@ class ScaleFactorPerLayer<InferenceEngine::WeightableLayer*, QUANT_DESC> {
             }
 
             auto multiplier = 1.0f;
-            if (quant->_weights_quant.GetLevels() <= std::numeric_limits<uint8_t>::max()) {
+            if (quant->_weights_quant.GetLevels() <= std::numeric_limits<uint8_t>::max() &&
+                quant->_weights_quant.GetMinValues().size() > 1) {
                 // GNA supports additional multiplier for only 8bit weights.
                 // The multipler is used to extend dynamic range.
                 multiplier = MAX_OUT_MULTIPLIER;

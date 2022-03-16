@@ -933,7 +933,7 @@ void GNAGraphCompiler::CopyPrimitive(InferenceEngine::CNNLayerPtr layer) {
     uint32_t num_padding_out = ALIGN(num_rows_out, 8) - num_rows_out;
     void* ptr_inputs = nullptr;
     void* ptr_outputs = nullptr;
-    auto orientation = kDnnInterleavedOrientation;
+    auto orientation = kDnnNonInterleavedOrientation;
 
     auto &currentComponent = dnnComponents.addComponent(layer->name, layer->type);
 

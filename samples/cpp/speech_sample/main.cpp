@@ -45,18 +45,52 @@ int main(int argc, char* argv[]) {
         if (!parse_and_check_command_line(argc, argv)) {
             return 0;
         }
+        BaseFile* file;
+        BaseFile* fileOutput;
+        ArkFile arkFile;
+        NumpyFile numpyFile;
+        auto extInputFile = fileExt(FLAGS_i);
+        if (extInputFile == "ark") {
+            file = &arkFile;
+        } else if (extInputFile == "npz") {
+            file = &numpyFile;
+        } else {
+            throw std::logic_error("Invalid input file");
+        }
+        std::vector<std::string> inputFiles;
+        std::vector<uint32_t> numBytesThisUtterance;
+        uint32_t numUtterances(0);
+        if (!FLAGS_i.empty()) {
+            std::string outStr;
+            std::istringstream stream(FLAGS_i);
+            uint32_t currentNumUtterances(0), currentNumBytesThisUtterance(0);
+            while (getline(stream, outStr, ',')) {
+                std::string filename(fileNameNoExt(outStr) + "." + extInputFile);
+                inputFiles.push_back(filename);
+                file->get_file_info(filename.c_str(), 0, &currentNumUtterances, &currentNumBytesThisUtterance);
+                if (numUtterances == 0) {
+                    numUtterances = currentNumUtterances;
+                } else if (currentNumUtterances != numUtterances) {
+                    throw std::logic_error(
+                        "Incorrect input files. Number of utterance must be the same for all input files");
+                }
+                numBytesThisUtterance.push_back(currentNumBytesThisUtterance);
+            }
+        }
+        size_t numInputFiles(inputFiles.size());
 
         // --------------------------- Step 1. Initialize OpenVINO Runtime core and read model
         // -------------------------------------
         ov::Core core;
         slog::info << "Loading model files:" << slog::endl << FLAGS_m << slog::endl;
-        uint32_t batch_size = (FLAGS_cw_r > 0 || FLAGS_cw_l > 0) ? 1 : (uint32_t)FLAGS_bs;
+        uint32_t batchSize = (FLAGS_cw_r > 0 || FLAGS_cw_l > 0 || !FLAGS_bs) ? 1 : (uint32_t)FLAGS_bs;
         std::shared_ptr<ov::Model> model;
         std::vector<std::string> outputs;
+        std::vector<std::string> output_names;
         std::vector<size_t> ports;
         // --------------------------- Processing custom outputs ---------------------------------------------
         if (!FLAGS_oname.empty()) {
-            std::vector<std::string> output_names = convert_str_to_vector(FLAGS_oname);
+            output_names = convert_str_to_vector(FLAGS_oname);
             for (const auto& output_name : output_names) {
                 auto pos_layer = output_name.rfind(":");
                 if (pos_layer == std::string::npos) {
@@ -70,22 +104,21 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        }
         // ------------------------------ Preprocessing ------------------------------------------------------
         // the preprocessing steps can be done only for loaded network and are not applicable for the imported network
         // (already compiled)
         if (!FLAGS_m.empty()) {
             model = core.read_model(FLAGS_m);
             if (!outputs.empty()) {
-                // add custom output
                 for (size_t i = 0; i < outputs.size(); i++) {
                     auto output = model->add_output(outputs[i], ports[i]);
-                    output.add_names({outputs[i], outputs[i] + ":" + std::to_string(ports[i])});
+                    output.set_names({outputs[i] + ":" + std::to_string(ports[i])});
                 }
             }
+            check_number_of_inputs(model->inputs().size(), numInputFiles);
             ov::preprocess::PrePostProcessor proc(model);
             const auto& inputs = model->inputs();
-                proc.input(i).tensor().set_element_type(ov::element::f32);
+            std::map<std::string, std::string> custom_layouts;
             if (!FLAGS_layout.empty()) {
                 custom_layouts = parse_input_layouts(FLAGS_layout, inputs);
             }
@@ -102,7 +135,7 @@ int main(int argc, char* argv[]) {
                 proc.output(i).tensor().set_element_type(ov::element::f32);
             }
             model = proc.build();
-            // ov::set_batch(model, batch_size);
+            if (FLAGS_bs) {
                 if (FLAGS_layout.empty() &&
                     std::any_of(inputs.begin(), inputs.end(), [](const ov::Output<ov::Node>& i) {
                         return ov::layout::get_layout(i).empty();
@@ -112,172 +145,121 @@ int main(int argc, char* argv[]) {
                         " but model does not contain layout information for any input. Please "
                         "specify it explicitly using -layout option. For example, input1[NCHW], input2[NC] or [NC]");
                 } else {
+                    ov::set_batch(model, batchSize);
                 }
             }
         }
         // ------------------------------ Get Available Devices ------------------------------------------------------
-        auto is_feature = [&](const std::string xFeature) {
+        auto isFeature = [&](const std::string xFeature) {
             return FLAGS_d.find(xFeature) != std::string::npos;
         };
-        bool use_gna = is_feature("GNA");
-        bool use_hetero = is_feature("HETERO");
-        std::string device_str = use_hetero && use_gna ? "HETERO:GNA,CPU" : FLAGS_d.substr(0, (FLAGS_d.find("_")));
+        bool useGna = isFeature("GNA");
+        bool useHetero = isFeature("HETERO");
+        std::string deviceStr = useHetero && useGna ? "HETERO:GNA,CPU" : FLAGS_d.substr(0, (FLAGS_d.find("_")));
         // -----------------------------------------------------------------------------------------------------
         // --------------------------- Set parameters and scale factors -------------------------------------
-        struct UtteranceInfo {
-            uint32_t num_frames = 0;            // num_rows
-            uint32_t num_frame_elements = 0;    // num_cols
-            uint32_t num_bytes_per_element = 0; // elem_size
-            uint32_t num_bytes = 0;             // num_rows * num_cols * elem_size
-            std::vector<uint8_t> data = {};
-            uint8_t* data_ptr = nullptr;
-        };
-
-        struct FileInfo {
-            std::string path = "";
-            BaseFile* file_ptr = nullptr;
-            uint32_t num_utterances = 0;
-            uint32_t num_memory_bytes = 0;
-            std::vector<UtteranceInfo> u_info = {};
-        };
-
-        ArkFile arkFile;
-        NumpyFile numpyFile;
-        auto get_file_ptr = [&](const std::string& filename) -> BaseFile* {
-            auto ext = fileExt(FLAGS_i);
-            if (ext == "ark") {
-                return &arkFile;
-            } else if (ext == "npz") {
-                return &numpyFile;
-            } else {
-                throw std::logic_error("Invalid input file: " + filename);
-            }
-        };
-
-        uint32_t (num_utterances)(0);
-        auto fill_file_info = [&](const std::map<std::string, std::string> file_names_map,
-                                  std::map<std::string, FileInfo>& file_info_map) {
-            for (auto&& fn : file_names_map) {
-                FileInfo file_info;
-                file_info.path = fn.second;
-                file_info.file_ptr = get_file_ptr(file_info.path);
-                file_info_map[fn.first] = file_info;
-                file_info_map[fn.first].u_info.resize(num_utterances);
-            }
-        };
-
-        std::map<std::string, FileInfo> i_file_info_map;
-        if (!FLAGS_i.empty()) {
-            fill_file_info(parse_file_names(model->inputs(), FLAGS_i), i_file_info_map);
-            for (auto&& i_file_info : i_file_info_map) {
-                auto filename = i_file_info.second.path.c_str();
-                auto file = i_file_info.second.file_ptr;
-                file->get_file_info(filename, 0, &i_file_info.second.num_utterances, &i_file_info.second.num_memory_bytes);
-                i_file_info.second.u_info.resize(i_file_info.second.num_utterances);
-                if (num_utterances == 0) {
-                    num_utterances = i_file_info.second.num_utterances;
-                } else if (i_file_info.second.num_utterances != num_utterances) {
-                    throw std::logic_error(
-                        "Incorrect input files. Number of utterance must be the same for all input files");
-                }
-            }
-        }
         /** Setting parameter for per layer metrics **/
-        ov::AnyMap gna_plugin_config;
-        ov::AnyMap generic_plugin_config;
-        if (use_gna) {
-            std::string gna_device =
-                use_hetero ? FLAGS_d.substr(FLAGS_d.find("GNA"), FLAGS_d.find(",") - FLAGS_d.find("GNA")) : FLAGS_d;
+        ov::AnyMap gnaPluginConfig;
+        ov::AnyMap genericPluginConfig;
+        if (useGna) {
+            std::string gnaDevice =
+                useHetero ? FLAGS_d.substr(FLAGS_d.find("GNA"), FLAGS_d.find(",") - FLAGS_d.find("GNA")) : FLAGS_d;
             auto parse_gna_device = [&](const std::string& device) -> ov::intel_gna::ExecutionMode {
                 ov::intel_gna::ExecutionMode mode;
                 std::stringstream ss(device);
                 ss >> mode;
                 return mode;
             };
-            gna_plugin_config[ov::intel_gna::execution_mode.name()] =
-                gna_device.find("_") == std::string::npos ? ov::intel_gna::ExecutionMode::AUTO : parse_gna_device(gna_device);
+            gnaPluginConfig[ov::intel_gna::execution_mode.name()] = gnaDevice.find("_") == std::string::npos
+                                                                        ? ov::intel_gna::ExecutionMode::AUTO
                                                                         : parse_gna_device(gnaDevice);
         }
         if (FLAGS_pc) {
-            generic_plugin_config[ov::enable_profiling.name()] = true;
+            genericPluginConfig.emplace(ov::enable_profiling(true));
         }
         if (FLAGS_q.compare("user") == 0) {
             if (!FLAGS_rg.empty()) {
                 std::string errMessage("Custom scale factor can not be set for imported gna model: " + FLAGS_rg);
                 throw std::logic_error(errMessage);
-            auto scale_factors_per_input = parse_scale_factors(model->inputs(), FLAGS_sf);
-            for (auto&& sf : scale_factors_per_input) {
-                slog::info << "For input " << sf.first << " using scale factor of " << sf.second << slog::endl;
+            } else {
+                auto scale_factors_per_input = parse_scale_factors(model->inputs(), FLAGS_sf);
+                if (numInputFiles != scale_factors_per_input.size()) {
+                    std::string errMessage("Incorrect command line for multiple inputs: " +
+                                           std::to_string(scale_factors_per_input.size()) +
                                            " scale factors provided for " + std::to_string(numInputFiles) +
                                            " input files.");
+                    throw std::logic_error(errMessage);
+                }
+                for (auto&& sf : scale_factors_per_input) {
+                    slog::info << "For input " << sf.first << " using scale factor of " << sf.second << slog::endl;
+                }
+                gnaPluginConfig[ov::intel_gna::scale_factors_per_input.name()] = scale_factors_per_input;
             }
-            gna_plugin_config[ov::intel_gna::scale_factors_per_input.name()] = scale_factors_per_input;
         } else {
             // "static" quantization with calculated scale factor
             if (!FLAGS_rg.empty()) {
                 slog::info << "Using scale factor from provided imported gna model: " << FLAGS_rg << slog::endl;
             } else {
-                std::map<std::string, float> scale_factors_per_input = {};
-                for (auto&& i_file_info : i_file_info_map) {
+                std::map<std::string, float> scale_factors_per_input;
+                for (size_t i = 0; i < numInputFiles; i++) {
+                    auto inputFileName = inputFiles[i].c_str();
                     std::string name;
-                    std::vector<uint8_t> ptr_features;
-                    uint32_t num_arrays(0), num_bytes(0), num_frames(0), num_frame_elements(0), num_bytes_ber_element(0);
-                    auto file = i_file_info.second.file_ptr;
-                    auto filename = i_file_info.second.path.c_str();
-                    file->get_file_info(filename, 0, &num_arrays, &num_bytes);
-                    ptr_features.resize(num_bytes);
-                    file->load_file(filename,
+                    std::vector<uint8_t> ptrFeatures;
+                    uint32_t numArrays(0), numBytes(0), numFrames(0), numFrameElements(0), numBytesPerElement(0);
+                    file->get_file_info(inputFileName, 0, &numArrays, &numBytes);
+                    ptrFeatures.resize(numBytes);
+                    file->load_file(inputFileName,
                                     0,
                                     name,
-                                    ptr_features,
-                                    &num_frames,
-                                    &num_frame_elements,
-                                    &num_bytes_ber_element);
-                    auto scale_factor = scale_factor_for_quantization(ptr_features.data(),
-                                                                      MAX_VAL_2B_FEAT,
-                                                                      num_frames * num_frame_elements);
-                    slog::info << "Using scale factor of " << scale_factor << " calculated from first utterance."
+                                    ptrFeatures,
+                                    &numFrames,
+                                    &numFrameElements,
+                                    &numBytesPerElement);
+                    auto floatScaleFactor = scale_factor_for_quantization(ptrFeatures.data(),
+                                                                          MAX_VAL_2B_FEAT,
+                                                                          numFrames * numFrameElements);
+                    slog::info << "Using scale factor of " << floatScaleFactor << " calculated from first utterance."
                                << slog::endl;
-                    scale_factors_per_input[i_file_info.first] = scale_factor;
+                    scale_factors_per_input[model->input(i).get_any_name()] = floatScaleFactor;
                 }
-                gna_plugin_config[ov::intel_gna::scale_factors_per_input.name()] = scale_factors_per_input;
+                gnaPluginConfig[ov::intel_gna::scale_factors_per_input.name()] = scale_factors_per_input;
             }
         }
-        gna_plugin_config[ov::hint::inference_precision.name()] = (FLAGS_qb == 8) ? ov::element::i8 : ov::element::i16;
+        gnaPluginConfig[ov::hint::inference_precision.name()] = (FLAGS_qb == 8) ? ov::element::i8 : ov::element::i16;
         auto parse_target = [&](const std::string& target) -> ov::intel_gna::HWGeneration {
-            return (target == "GNA_TARGET_2_0") ? ov::intel_gna::HWGeneration::GNA_2_0 :
-                   (target == "GNA_TARGET_3_0") ? ov::intel_gna::HWGeneration::GNA_3_0 :
-                   ov::intel_gna::HWGeneration::UNDEFINED;
+            return (target == "GNA_TARGET_2_0") ? ov::intel_gna::HWGeneration::GNA_2_0
+                                                : (target == "GNA_TARGET_3_0") ? ov::intel_gna::HWGeneration::GNA_3_0
+                                                                               : ov::intel_gna::HWGeneration::UNDEFINED;
         };
-        gna_plugin_config[ov::intel_gna::execution_target.name()] = parse_target(FLAGS_exec_target);
-        gna_plugin_config[ov::intel_gna::compile_target.name()] = parse_target(FLAGS_compile_target);
-        gna_plugin_config[ov::intel_gna::memory_reuse.name()] = true;
-        gna_plugin_config[ov::intel_gna::pwl_max_error_percent.name()] = FLAGS_pwl_me;
+        gnaPluginConfig[ov::intel_gna::execution_target.name()] = parse_target(FLAGS_exec_target);
+        gnaPluginConfig[ov::intel_gna::compile_target.name()] = parse_target(FLAGS_compile_target);
+        gnaPluginConfig[ov::intel_gna::memory_reuse.name()] = false;
+        gnaPluginConfig[ov::intel_gna::pwl_max_error_percent.name()] = FLAGS_pwl_me;
         // -----------------------------------------------------------------------------------------------------
         // --------------------------- Write model to file --------------------------------------------------
         // Embedded GNA model dumping (for Intel(R) Speech Enabling Developer Kit)
         if (!FLAGS_we.empty()) {
-            gna_plugin_config[ov::intel_gna::firmware_model_image_path.name()] = FLAGS_we;
+            gnaPluginConfig[ov::intel_gna::firmware_model_image_path.name()] = FLAGS_we;
         }
         // -----------------------------------------------------------------------------------------------------
         // --------------------------- Step 2. Loading model to the device ------------------------------------------
-        if (use_gna) {
-            generic_plugin_config.insert(std::begin(gna_plugin_config), std::end(gna_plugin_config));
+        if (useGna) {
+            genericPluginConfig.insert(std::begin(gnaPluginConfig), std::end(gnaPluginConfig));
         }
         auto t0 = Time::now();
         ms loadTime = std::chrono::duration_cast<ms>(Time::now() - t0);
         slog::info << "Model loading time " << loadTime.count() << " ms" << slog::endl;
-        ov::CompiledModel compiled_model;
+        ov::CompiledModel executableNet;
         if (!FLAGS_m.empty()) {
             slog::info << "Loading model to the device " << FLAGS_d << slog::endl;
-            compiled_model = core.compile_model(model, device_str, generic_plugin_config);
+            executableNet = core.compile_model(model, deviceStr, genericPluginConfig);
         } else {
             slog::info << "Importing model to the device" << slog::endl;
             std::ifstream streamrq(FLAGS_rg, std::ios_base::binary | std::ios_base::in);
             if (!streamrq.is_open()) {
                 throw std::runtime_error("Cannot open model file " + FLAGS_rg);
             }
-            compiled_model = core.import_model(streamrq, device_str, generic_plugin_config);
+            executableNet = core.import_model(streamrq, deviceStr, genericPluginConfig);
             // loading batch from exported model
             const auto& imported_inputs = executableNet.inputs();
             if (std::any_of(imported_inputs.begin(), imported_inputs.end(), [](const ov::Output<const ov::Node>& i) {
@@ -300,7 +282,7 @@ int main(int argc, char* argv[]) {
             slog::info << "Writing GNA Model to file " << FLAGS_wg << slog::endl;
             t0 = Time::now();
             std::ofstream streamwq(FLAGS_wg, std::ios_base::binary | std::ios::out);
-            compiled_model.export_model(streamwq);
+            executableNet.export_model(streamwq);
             ms exportTime = std::chrono::duration_cast<ms>(Time::now() - t0);
             slog::info << "Exporting time " << exportTime.count() << " ms" << slog::endl;
             return 0;
@@ -315,117 +297,116 @@ int main(int argc, char* argv[]) {
         std::vector<InferRequestStruct> inferRequests(1);
 
         for (auto& inferRequest : inferRequests) {
-            inferRequest = {compiled_model.create_infer_request(), -1, batch_size};
+            inferRequest = {executableNet.create_infer_request(), -1, batchSize};
         }
         // --------------------------- Step 4. Configure input & output
         // --------------------------------------------------
-        std::map<std::string, ov::Tensor> input_tensors_map;
-        auto inputs = compiled_model.inputs();
-        check_number_of_files(inputs.size(), i_file_info_map.size());
+        std::vector<ov::Tensor> ptrInputBlobs;
+        auto cInputInfo = executableNet.inputs();
+        check_number_of_inputs(cInputInfo.size(), numInputFiles);
         if (!FLAGS_iname.empty()) {
             std::vector<std::string> inputNameBlobs = convert_str_to_vector(FLAGS_iname);
-            for (const auto& input_name : inputNameBlobs) {
-                // check_name(inputs, input_name);
-                ov::Tensor tensor = inferRequests.begin()->inferRequest.get_tensor(input_name);
-                if (!tensor) {
-                    std::string errMessage("No tensor with name : " + input_name);
+            if (inputNameBlobs.size() != cInputInfo.size()) {
+                std::string errMessage(std::string("Number of network inputs ( ") + std::to_string(cInputInfo.size()) +
+                                       " ) is not equal to the number of inputs entered in the -iname argument ( " +
+                                       std::to_string(inputNameBlobs.size()) + " ).");
+                throw std::logic_error(errMessage);
+            }
+            for (const auto& input : inputNameBlobs) {
+                ov::Tensor blob = inferRequests.begin()->inferRequest.get_tensor(input);
+                if (!blob) {
+                    std::string errMessage("No blob with name : " + input);
                     throw std::logic_error(errMessage);
                 }
-                input_tensors_map[input_name] = tensor;
+                ptrInputBlobs.push_back(blob);
             }
         } else {
-            for (const auto& input : inputs) {
-                input_tensors_map[input.get_any_name()] = inferRequests.begin()->inferRequest.get_tensor(input);
+            for (const auto& input : cInputInfo) {
+                ptrInputBlobs.push_back(inferRequests.begin()->inferRequest.get_tensor(input));
             }
         }
-
-        auto filter_outputs = [&](const ov::OutputVector& nodes) {
-            if (outputs.empty()) {
-                return nodes;
-            }
-            ov::OutputVector filtered_outputs{};
-            for (auto output : nodes) {
-                for (const std::string &name : output.get_names()) {
-                    if(std::count(outputs.begin(), outputs.end(), name) != 0) {
-                        filtered_outputs.push_back(output);
-                    }
-                }
-            }
-            return filtered_outputs;
-        };
-
-        std::map<std::string, FileInfo> o_file_info_map;
+        std::vector<std::string> output_name_files;
+        std::vector<std::string> reference_name_files;
+        size_t count_file = 1;
         if (!FLAGS_o.empty()) {
-            fill_file_info(parse_file_names(filter_outputs(model->outputs()), FLAGS_o), o_file_info_map);
+            output_name_files = convert_str_to_vector(FLAGS_o);
+            if (output_name_files.size() != outputs.size() && !outputs.empty()) {
+                throw std::logic_error("The number of output files is not equal to the number of network outputs.");
+            }
+            count_file = output_name_files.empty() ? 1 : output_name_files.size();
         }
-        std::map<std::string, FileInfo> r_file_info_map;
         if (!FLAGS_r.empty()) {
-            fill_file_info(parse_file_names(filter_outputs(model->outputs()), FLAGS_r), r_file_info_map);
+            reference_name_files = convert_str_to_vector(FLAGS_r);
+            if (reference_name_files.size() != outputs.size() && !outputs.empty()) {
+                throw std::logic_error("The number of reference files is not equal to the number of network outputs.");
+            }
+            count_file = reference_name_files.empty() ? 1 : reference_name_files.size();
         }
-
-        auto get_num_scores_per_frame = [&](const std::string& name) -> const size_t {
-            auto dims = compiled_model.output(name).get_shape();
-            return std::accumulate(std::begin(dims), std::end(dims), size_t{1}, std::multiplies<size_t>());
-        };
+        if (count_file > executableNet.outputs().size()) {
+            throw std::logic_error(
+                "The number of output/reference files is not equal to the number of network outputs.");
+        }
         // -----------------------------------------------------------------------------------------------------
         // --------------------------- Step 5. Do inference --------------------------------------------------------
-        ScoreErrorT frame_error, total_error;
+        std::vector<std::vector<uint8_t>> ptrUtterances;
+        std::vector<std::vector<uint8_t>> vectorPtrScores((outputs.size() == 0) ? executableNet.outputs().size()
+                                                                                : outputs.size());
+        std::vector<uint16_t> numScoresPerOutput((outputs.size() == 0) ? executableNet.outputs().size()
                                                                        : outputs.size());
         std::vector<std::vector<uint8_t>> vectorPtrReferenceScores(reference_name_files.size());
         std::vector<ScoreErrorT> vectorFrameError(reference_name_files.size()),
             vectorTotalError(reference_name_files.size());
+        ptrUtterances.resize(inputFiles.size());
         // initialize memory state before starting
         for (auto&& state : inferRequests.begin()->inferRequest.query_state()) {
             state.reset();
         }
         /** Work with each utterance **/
-        for (uint32_t utt_i = 0; utt_i < num_utterances; ++utt_i) {
-            std::map<std::string, ov::ProfilingInfo> utterance_perf_map;
-            uint64_t total_number_of_runs_on_hw = 0;
-            std::string utt_name;
-            uint32_t num_frames(0);
-
-            auto get_utt_data = [ &utt_i ] (FileInfo& file_info, std::string& utt_name) -> void {
-                uint32_t n(0);
-                auto filename = file_info.path.c_str();
-                auto file_ptr = file_info.file_ptr;
-                file_ptr->get_file_info(filename, utt_i, &n, &file_info.u_info[utt_i].num_bytes);
-                file_info.u_info[utt_i].data.resize(file_info.u_info[utt_i].num_bytes);
-                file_ptr->load_file(filename,
-                                    utt_i,
-                                    utt_name,
-                                    file_info.u_info[utt_i].data,
-                                    &file_info.u_info[utt_i].num_frames,
-                                    &file_info.u_info[utt_i].num_frame_elements,
-                                    &file_info.u_info[utt_i].num_bytes_per_element);
-            };
+        for (uint32_t utteranceIndex = 0; utteranceIndex < numUtterances; ++utteranceIndex) {
+            std::map<std::string, ov::ProfilingInfo> utterancePerfMap;
+            uint64_t totalNumberOfRunsOnHw = 0;
+            std::string uttName;
+            uint32_t numFrames(0), n(0);
+            std::vector<uint32_t> numFrameElementsInput;
+            std::vector<uint32_t> numFramesReference(reference_name_files.size()),
+                numFrameElementsReference(reference_name_files.size()),
+                numBytesPerElementReference(reference_name_files.size()),
+                numBytesReferenceScoreThisUtterance(reference_name_files.size());
 
             /** Get information from input file for current utterance **/
-            for (auto&& i_file_info : i_file_info_map) {
-                get_utt_data(i_file_info.second, utt_name);
-                if (num_frames == 0) {
-                    num_frames = i_file_info.second.u_info[utt_i].num_frames;
-                } else if (num_frames != i_file_info.second.u_info[utt_i].num_frames) {
+            numFrameElementsInput.resize(numInputFiles);
+            for (size_t i = 0; i < inputFiles.size(); i++) {
+                std::vector<uint8_t> ptrUtterance;
+                auto inputFilename = inputFiles[i].c_str();
+                uint32_t currentNumFrames(0), currentNumFrameElementsInput(0), currentNumBytesPerElementInput(0);
+                file->get_file_info(inputFilename, utteranceIndex, &n, &numBytesThisUtterance[i]);
+                ptrUtterance.resize(numBytesThisUtterance[i]);
+                file->load_file(inputFilename,
+                                utteranceIndex,
+                                uttName,
+                                ptrUtterance,
+                                &currentNumFrames,
+                                &currentNumFrameElementsInput,
+                                &currentNumBytesPerElementInput);
+                if (numFrames == 0) {
+                    numFrames = currentNumFrames;
+                } else if (numFrames != currentNumFrames) {
                     std::string errMessage("Number of frames in input files is different: " +
-                                            std::to_string(num_frames) + " and " + std::to_string(i_file_info.second.u_info[utt_i].num_frames));
+                                           std::to_string(numFrames) + " and " + std::to_string(currentNumFrames));
                     throw std::logic_error(errMessage);
                 }
-                auto tensor_size = input_tensors_map.at(i_file_info.first).get_size();
-                auto num_elements = i_file_info.second.u_info[utt_i].num_frame_elements * batch_size;
-                if (tensor_size != num_elements) {
-                    throw std::logic_error("network input size(" + std::to_string(tensor_size) +
-                                            ") mismatch to input file size (" + std::to_string(num_elements) + ")");
+                ptrUtterances[i] = ptrUtterance;
+                numFrameElementsInput[i] = currentNumFrameElementsInput;
             }
-                i_file_info.second.u_info[utt_i].data_ptr = &i_file_info.second.u_info[utt_i].data.front();
-            }
-            /** Resize output data array **/
-            if (!FLAGS_o.empty()) {
-                for (auto& o_file_info : o_file_info_map) {
-                    auto num_scores_per_frame = get_num_scores_per_frame(o_file_info.first);
-                    slog::info << "Number scores per frame : " << num_scores_per_frame << slog::endl;
-                    o_file_info.second.u_info[utt_i].data.resize(num_frames * num_scores_per_frame * sizeof(float));
+            int i = 0;
+            for (auto& ptrInputBlob : ptrInputBlobs) {
+                if (ptrInputBlob.get_size() != numFrameElementsInput[i++] * batchSize) {
+                    throw std::logic_error("network input size(" + std::to_string(ptrInputBlob.get_size()) +
+                                           ") mismatch to input file size (" +
+                                           std::to_string(numFrameElementsInput[i - 1] * batchSize) + ")");
                 }
             }
+
             double totalTime = 0.0;
 
             for (size_t errorIndex = 0; errorIndex < vectorFrameError.size(); errorIndex++) {
@@ -450,25 +431,34 @@ int main(int argc, char* argv[]) {
 
             if (!reference_data.first.empty()) {
                 /** Read file with reference scores **/
-                for (auto& r_file_info : r_file_info_map) {
-                    std::string ref_utterance_name;
-                    get_utt_data(r_file_info.second, ref_utterance_name);
+                auto exReferenceScoresFile = fileExt(FLAGS_r);
+                if (exReferenceScoresFile == "ark") {
+                    fileReferenceScores = &arkFile;
+                } else if (exReferenceScoresFile == "npz") {
+                    fileReferenceScores = &numpyFile;
+                } else {
+                    throw std::logic_error("Invalid Reference Scores file");
+                }
+                for (size_t next_output = 0; next_output < count_file; next_output++) {
                     if (fileReferenceScores != nullptr) {
-               }
+                        fileReferenceScores->get_file_info(reference_name_files[next_output].c_str(),
+                                                           utteranceIndex,
+                                                           &n,
+                                                           &numBytesReferenceScoreThisUtterance[next_output]);
+                        vectorPtrReferenceScores[next_output].resize(numBytesReferenceScoreThisUtterance[next_output]);
+                        fileReferenceScores->load_file(reference_name_files[next_output].c_str(),
+                                                       utteranceIndex,
+                                                       refUtteranceName,
+                                                       vectorPtrReferenceScores[next_output],
+                                                       &numFramesReference[next_output],
+                                                       &numFrameElementsReference[next_output],
+                                                       &numBytesPerElementReference[next_output]);
+                    }
+                }
             }
-            double total_time = 0.0;
-            std::cout << "Utterance " << utt_i << ": " << std::endl;
-            clear_score_error(&total_error);
-            total_error.threshold = frame_error.threshold = MAX_SCORE_DIFFERENCE;
-            std::map<std::string, ov::ProfilingInfo> call_perf_map;
-            size_t frame_i = 0;
-            uint32_t num_frames_file = num_frames;
-            num_frames += FLAGS_cw_l + FLAGS_cw_r;
-            uint32_t num_frames_this_batch{batch_size};
-            auto t0 = Time::now();
-            auto t1 = t0;
-            while (frame_i <= num_frames) {
-                if (frame_i == num_frames) {
+
+            while (frameIndex <= numFrames) {
+                if (frameIndex == numFrames) {
                     if (std::find_if(inferRequests.begin(), inferRequests.end(), [&](InferRequestStruct x) {
                             return (x.frameIndex != -1);
                         }) == inferRequests.end()) {
@@ -478,17 +468,21 @@ int main(int argc, char* argv[]) {
                 bool inferRequestFetched = false;
                 /** Start inference loop **/
                 for (auto& inferRequest : inferRequests) {
-                    num_frames_this_batch = (frame_i == num_frames) ? 1 :
-                            (num_frames - frame_i < batch_size) ? (num_frames - frame_i) : batch_size;
+                    if (frameIndex == numFrames) {
+                        numFramesThisBatch = 1;
+                    } else {
+                        numFramesThisBatch =
+                            (numFrames - frameIndex < batchSize) ? (numFrames - frameIndex) : batchSize;
+                    }
 
                     /* waits until inference result becomes available */
                     if (inferRequest.frameIndex != -1) {
                         inferRequest.inferRequest.wait();
-                        if (inferRequest.frameIndex >= 0) {
-                            // Get outputs data
-                            for (auto&& o_file_info : o_file_info_map) {
-                                auto output_name = o_file_info.first;
-                                auto num_scores_per_frame = get_num_scores_per_frame(output_name);
+                        if (inferRequest.frameIndex >= 0)
+                            for (size_t next_output = 0; next_output < count_file; next_output++) {
+                                std::string outputName = (outputs.size() == 0)
+                                                             ? executableNet.output(next_output).get_any_name()
+                                                             : output_names[next_output];
                                 auto dims = executableNet.output(outputName).get_shape();
                                 numScoresPerOutput[next_output] = std::accumulate(std::begin(dims),
                                                                                   std::end(dims),
@@ -498,43 +492,50 @@ int main(int argc, char* argv[]) {
                                 vectorPtrScores[next_output].resize(numFramesFile * numScoresPerOutput[next_output] *
                                                                     sizeof(float));
 
-                                /* Prepare output data for save to file in future */
-                                uint8_t* data_ptr = &o_file_info.second.u_info[utt_i].data.front() +
-                                                num_scores_per_frame * sizeof(float) * (inferRequest.frameIndex);
-                                ov::Tensor output_tensor = inferRequest.inferRequest.get_tensor(output_name);
-                                // locked memory holder should be alive all time while access to its buffer happens
-                                std::memcpy(data_ptr, output_tensor.data<float>(), num_scores_per_frame * sizeof(float));
-                            }
-                            /** Compare output data with reference scores **/
-                            for (auto&& r_file_info : r_file_info_map) {
-                                auto output_name = r_file_info.first;
-                                ov::Tensor output_tensor =
-                                    inferRequest.inferRequest.get_tensor(output_name);
-                                compare_scores(
-                                    output_tensor.data<float>(),
-                                    &r_file_info.second.u_info[utt_i].data[inferRequest.frameIndex *
-                                                        r_file_info.second.u_info[utt_i].num_frame_elements *
-                                                        r_file_info.second.u_info[utt_i].num_bytes_per_element],
-                                    &frame_error,
+                                if (!FLAGS_o.empty()) {
+                                    /* Prepare output data for save to file in future */
+                                    auto outputFrame = &vectorPtrScores[next_output].front() +
+                                                       numScoresPerOutput[next_output] * sizeof(float) *
+                                                           (inferRequest.frameIndex) / batchSize;
+
+                                    ov::Tensor outputBlob =
+                                        inferRequest.inferRequest.get_tensor(executableNet.output(outputName));
+                                    // locked memory holder should be alive all time while access to its buffer happens
+                                    auto byteSize = numScoresPerOutput[next_output] * sizeof(float);
+                                    std::memcpy(outputFrame, outputBlob.data<float>(), byteSize);
+                                }
+                                if (!FLAGS_r.empty()) {
+                                    /** Compare output data with reference scores **/
+                                    ov::Tensor outputBlob =
+                                        inferRequest.inferRequest.get_tensor(executableNet.output(outputName));
+
+                                    if (numScoresPerOutput[next_output] / numFrameElementsReference[next_output] ==
+                                        batchSize) {
+                                        compare_scores(
+                                            outputBlob.data<float>(),
+                                            &vectorPtrReferenceScores[next_output]
+                                                                     [inferRequest.frameIndex *
+                                                                      numFrameElementsReference[next_output] *
+                                                                      numBytesPerElementReference[next_output]],
                                             &vectorFrameError[next_output],
-                                    inferRequest.numFramesThisBatch,
-                                    r_file_info.second.u_info[utt_i].num_frame_elements);
-                                update_score_error(&frame_error, &total_error);
+                                            inferRequest.numFramesThisBatch,
+                                            numFrameElementsReference[next_output]);
+                                        update_score_error(&vectorFrameError[next_output],
                                                            &vectorTotalError[next_output]);
                                     } else {
                                         throw std::logic_error("Number of output and reference frames does not match.");
                                     }
+                                }
+                                if (FLAGS_pc) {
+                                    // retrieve new counters
+                                    get_performance_counters(inferRequest.inferRequest, callPerfMap);
+                                    // summarize retrieved counters with all previous
+                                    sum_performance_counters(callPerfMap, utterancePerfMap, totalNumberOfRunsOnHw);
+                                }
                             }
-                            if (FLAGS_pc) {
-                                // retrieve new counters
-                                get_performance_counters(inferRequest.inferRequest, call_perf_map);
-                                // summarize retrieved counters with all previous
-                                sum_performance_counters(call_perf_map, utterance_perf_map, total_number_of_runs_on_hw);
-                            }
-                        }
                         // -----------------------------------------------------------------------------------------------------
                     }
-                    if (frame_i == num_frames) {
+                    if (frameIndex == numFrames) {
                         inferRequest.frameIndex = -1;
                         continue;
                     }
@@ -575,36 +576,26 @@ int main(int argc, char* argv[]) {
                         }
                     }
                     // -----------------------------------------------------------------------------------------------------
-                    int index = static_cast<int>(frame_i) - (FLAGS_cw_l + FLAGS_cw_r);
-                    // size_t i = 0;
-                    for (auto&& i_file_info : i_file_info_map) {
-                        // inferRequest.inferRequest.set_input_tensor(
-                        //     i++,
-                        //     ov::Tensor(ov::element::f32, input_tensors_map.at(i_file_info.first).get_shape(), i_file_info.second.u_info[utt_i].data_ptr));
-
-                        inferRequest.inferRequest.set_tensor(i_file_info.first,
-                            ov::Tensor(ov::element::f32, input_tensors_map.at(i_file_info.first).get_shape(), i_file_info.second.u_info[utt_i].data_ptr));
-                    }
+                    int index = static_cast<int>(frameIndex) - (FLAGS_cw_l + FLAGS_cw_r);
                     /* Starting inference in asynchronous mode*/
                     inferRequest.inferRequest.start_async();
                     inferRequest.frameIndex = index < 0 ? -2 : index;
-                    inferRequest.numFramesThisBatch = num_frames_this_batch;
-                    frame_i += num_frames_this_batch;
-                    for (auto&& i_file_info : i_file_info_map) {
-                        auto num_frame_elements = i_file_info.second.u_info[utt_i].num_frame_elements;
+                    inferRequest.numFramesThisBatch = numFramesThisBatch;
+                    frameIndex += numFramesThisBatch;
+                    for (size_t j = 0; j < inputFiles.size(); j++) {
                         if (FLAGS_cw_l > 0 || FLAGS_cw_r > 0) {
-                            int idx = frame_i - FLAGS_cw_l;
-                            if (idx > 0 && idx < static_cast<int>(num_frames_file)) {
-                                i_file_info.second.u_info[utt_i].data_ptr += sizeof(float) * num_frame_elements * num_frames_this_batch;
-                            } else if (idx >= static_cast<int>(num_frames_file)) {
-                                i_file_info.second.u_info[utt_i].data_ptr = &i_file_info.second.u_info[utt_i].data.front() + (num_frames_file - 1) * sizeof(float) *
-                                                                                num_frame_elements *
-                                                                                num_frames_this_batch;
+                            int idx = frameIndex - FLAGS_cw_l;
+                            if (idx > 0 && idx < static_cast<int>(numFramesFile)) {
+                                inputFrame[j] += sizeof(float) * numFrameElementsInput[j] * numFramesThisBatch;
+                            } else if (idx >= static_cast<int>(numFramesFile)) {
+                                inputFrame[j] = &ptrUtterances[j].front() + (numFramesFile - 1) * sizeof(float) *
+                                                                                numFrameElementsInput[j] *
+                                                                                numFramesThisBatch;
                             } else if (idx <= 0) {
-                                i_file_info.second.u_info[utt_i].data_ptr = &i_file_info.second.u_info[utt_i].data.front();
+                                inputFrame[j] = &ptrUtterances[j].front();
                             }
                         } else {
-                            i_file_info.second.u_info[utt_i].data_ptr += sizeof(float) * num_frame_elements * num_frames_this_batch;
+                            inputFrame[j] += sizeof(float) * numFrameElementsInput[j] * numFramesThisBatch;
                         }
                     }
                     inferRequestFetched |= true;
@@ -618,7 +609,7 @@ int main(int argc, char* argv[]) {
             t1 = Time::now();
             fsec fs = t1 - t0;
             ms d = std::chrono::duration_cast<ms>(fs);
-            total_time += d.count();
+            totalTime += d.count();
             // resetting state between utterances
             for (auto&& state : inferRequests.begin()->inferRequest.query_state()) {
                 state.reset();
@@ -627,9 +618,9 @@ int main(int argc, char* argv[]) {
 
             // --------------------------- Step 6. Process output
             // -------------------------------------------------------
-            for (auto&& o_file_info : o_file_info_map) {
-                auto num_scores_per_frame = get_num_scores_per_frame(o_file_info.first);
-                auto file = o_file_info.second.file_ptr;
+
+            /** Show performance results **/
+            std::cout << "Utterance " << utteranceIndex << ": " << std::endl;
             std::cout << "Total time in Infer (HW and SW):\t" << totalTime << " ms" << std::endl;
             std::cout << "Frames in utterance:\t\t\t" << numFrames << " frames" << std::endl;
             std::cout << "Average Infer time per frame:\t\t" << totalTime / static_cast<double>(numFrames) << " ms\n"
@@ -646,40 +637,34 @@ int main(int argc, char* argv[]) {
             }
 
             for (size_t next_output = 0; next_output < count_file; next_output++) {
-                /* Save output data to file */
-                bool shouldAppend = (utt_i == 0) ? false : true;
-                file->save_file(o_file_info.second.path.c_str(),
-                                shouldAppend,
-                                utt_name,
-                                &o_file_info.second.u_info[utt_i].data.front(),
-                                num_frames_file,
-                                num_scores_per_frame);
-            }
-            /** Show performance results **/
-            std::cout << "Total time in Infer (HW and SW):\t" << total_time << " ms" << std::endl;
-            std::cout << "Frames in utterance:\t\t\t" << num_frames << " frames" << std::endl;
-            std::cout << "Average Infer time per frame:\t\t" << total_time / static_cast<double>(num_frames) << " ms"
-                        << std::endl;
-            if (FLAGS_pc) {
-                // print performance results
-                print_performance_counters(utterance_perf_map,
-                                            frame_i,
-                                            std::cout,
-                                            getFullDeviceName(core, FLAGS_d),
-                                            total_number_of_runs_on_hw,
-                                            FLAGS_d);
-            }
-            if (!FLAGS_r.empty()) {
-                // print statistical score error
-                print_reference_compare_results(total_error, num_frames, std::cout);
+                if (!FLAGS_o.empty()) {
+                    auto exOutputScoresFile = fileExt(FLAGS_o);
+                    if (exOutputScoresFile == "ark") {
+                        fileOutput = &arkFile;
+                    } else if (exOutputScoresFile == "npz") {
+                        fileOutput = &numpyFile;
+                    } else {
+                        throw std::logic_error("Invalid Reference Scores file");
+                    }
+                    /* Save output data to file */
+                    bool shouldAppend = (utteranceIndex == 0) ? false : true;
+                    fileOutput->save_file(output_name_files[next_output].c_str(),
+                                          shouldAppend,
+                                          uttName,
+                                          &vectorPtrScores[next_output].front(),
+                                          numFramesFile,
+                                          numScoresPerOutput[next_output] / batchSize);
+                }
+                if (!FLAGS_r.empty()) {
+                    // print statistical score error
+                    std::string outputName = (outputs.size() == 0) ? executableNet.output(next_output).get_any_name()
                                                                    : output_names[next_output];
                     std::cout << "Output name: " << outputName << std::endl;
                     std::cout << "Number scores per frame: " << numScoresPerOutput[next_output] / batchSize << std::endl
                               << std::endl;
                     print_reference_compare_results(vectorTotalError[next_output], numFrames, std::cout);
+                }
             }
-            std::cout << "End of Utterance " << utt_i << std::endl << std::endl;
-            // -----------------------------------------------------------------------------------------------------
         }
     } catch (const std::exception& error) {
         slog::err << error.what() << slog::endl;

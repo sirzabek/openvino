@@ -1064,7 +1064,8 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
             // Orientation of an input doesn't make sense for components transposing the data and
             // components with identity dimensions, so skip them
             if (dnnLayer->operation != kDnnInterleaveOp && dnnLayer->operation != kDnnDeinterleaveOp &&
-                dnnLayer->operation != kDnnDiagonalOp && dnnLayer->num_rows_in > 1 && dnnLayer->num_columns_in > 1) {
+                dnnLayer->operation != kDnnDiagonalOp &&
+                (dnnLayer->operation == kDnnAffineOp || dnnLayer->num_rows_in > 1 && dnnLayer->num_columns_in > 1)) {
                 orientations.push_back(dnnLayer->orientation_in);
             }
         }
@@ -1313,7 +1314,8 @@ GnaWaitStatus GNAPlugin::WaitFor(uint32_t request_idx, int64_t millisTimeout) {
         auto isScalar = outputBlob->getTensorDesc().getLayout() == Layout::SCALAR;
         auto is3D = outputBlob->getTensorDesc().getLayout() == Layout::CHW;
         auto batchSize = (is1D || isScalar || is3D) ? 1 : dims[0];
-        auto elementsPerBatch = isScalar ? 1 : (is1D ? dims.front() : InferenceEngine::details::product(++std::begin(dims), std::end(dims)));
+        auto elementsPerBatch = isScalar ? 1 : (is1D || is3D ? details::product(std::begin(dims), std::end(dims)) :
+            details::product(++std::begin(dims), std::end(dims)));
 
         auto transpose_output_info = transpose_outputs_info.find(outputBlobIt.first);
         if (transpose_output_info != std::end(transpose_outputs_info) && FoundPartToTranspose(transpose_output_info->second)) {

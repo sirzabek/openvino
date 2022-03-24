@@ -146,7 +146,7 @@ ngraph::pass::ConvertMatMulToFC::ConvertMatMulToFC() {
                     if (fq_val_shape.size() == 2 && fq_val_shape[0] > 1) {
                         std::vector<float> values(fq_after_const->get_input_size() - 1);
                         ov::element::Type el_type = ov::element::f32;
-                        for (size_t fq_in_ix = 1; fq_in_ix < values.size(); ++fq_in_ix) {
+                        for (size_t fq_in_ix = 1; fq_in_ix < values.size() + 1; ++fq_in_ix) {
                             auto const_node = std::dynamic_pointer_cast<ngraph::opset8::Constant>(
                                 fq_after_const->input_value(fq_in_ix).get_node_shared_ptr());
 

@@ -20,7 +20,8 @@ namespace GNAPluginNS {
 
 NGRAPH_RTTI_DEFINITION(HandleTransposesAroundMatMul, "HandleTransposesAroundMatMul", 0);
 NGRAPH_RTTI_DEFINITION(HandleTransposeBeforeMatMul, "HandleTransposeBeforeMatMul", 0);
-NGRAPH_RTTI_DEFINITION(HandleTransposeAfterMatMul, "HandleTransposeAfterMatMul", 0);
+NGRAPH_RTTI_DEFINITION(RemoveTransposeAfterMatMul, "RemoveTransposeAfterMatMul", 0);
+NGRAPH_RTTI_DEFINITION(InsertTransposeAfterMatMul, "InsertTransposeAfterMatMul", 0);
 NGRAPH_RTTI_DEFINITION(TransposeDecomposition, "TransposeDecomposition", 0);
 
 namespace {
@@ -52,7 +53,7 @@ void InsertTranspose(std::shared_ptr<ngraph::Node> prev_node, const std::string&
             transpose_ids.push_back(i);
         }
     }
-    IE_ASSERT(transpose_ids.size() == 2);
+    if (transpose_ids.size() != 2) return;
     std::vector<size_t> permute_order(orig_shape.size());
     std::iota(std::begin(permute_order), std::end(permute_order), 0);
     std::swap(permute_order[transpose_ids[0]], permute_order[transpose_ids[1]]);
@@ -182,7 +183,7 @@ HandleTransposeBeforeMatMul::HandleTransposeBeforeMatMul() {
     this->register_matcher(matcher, callback);
 }
 
-HandleTransposeAfterMatMul::HandleTransposeAfterMatMul() {
+RemoveTransposeAfterMatMul::RemoveTransposeAfterMatMul() {
     auto matmul = ngraph::pattern::wrap_type<ngraph::opset8::MatMul>({}, [](const ngraph::Output<ngraph::Node>& node) {
         auto out_shape = node.get_node_shared_ptr()->get_output_shape(0);
         return std::count_if(out_shape.begin(), out_shape.end(), [](size_t n) { return n > 1; }) > 1; });
@@ -198,41 +199,72 @@ HandleTransposeAfterMatMul::HandleTransposeAfterMatMul() {
     auto act = ngraph::pattern::wrap_type<ngraph::opset8::Relu, ngraph::opset8::Sigmoid,
             ngraph::opset8::Tanh, ngraph::opset8::Abs, ngraph::opset8::Log, ngraph::opset8::Exp,
             ngraph::opset8::Sign, ngraph::opset8::Clamp>({act_input});
-    auto transpose_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{act_input, act});
+    auto reshape_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{act_input, act});
+    auto reshape_before_transpose = ngraph::pattern::wrap_type<ngraph::opset8::Reshape>({reshape_input, ngraph::pattern::any_input()});
+    auto transpose_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{reshape_input, reshape_before_transpose});
     auto transpose = ngraph::pattern::wrap_type<ngraph::opset8::Transpose>({transpose_input, ngraph::pattern::any_input()});
-    auto reshape_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{transpose_input, transpose});
-    auto reshape = ngraph::pattern::wrap_type<ngraph::opset8::Reshape>(
-        {reshape_input, ngraph::pattern::any_input()}, VerifyReshape);
+    auto reshape = ngraph::pattern::wrap_type<ngraph::opset8::Reshape>({transpose, ngraph::pattern::any_input()}, VerifyReshape);
 
     ngraph::matcher_pass_callback callback = [=](ngraph::pattern::Matcher &matcher) {
         const auto& pattern_map = matcher.get_pattern_value_map();
-        auto transpose_it = pattern_map.find(transpose);
-        if (transpose_it != std::end(pattern_map)) {
-            ReplaceTransposeWithReshape(transpose_it->second.get_node_shared_ptr());
-        } else {
-            auto reshape_node = pattern_map.at(reshape).get_node_shared_ptr();
-            if (!GNALimitations::IsTransposeSupported(reshape_node->get_input_shape(0))) return false;
-            auto iter = pattern_map.find(act);
-            if (iter == pattern_map.end() &&
-                (iter = pattern_map.find(fq2)) == pattern_map.end() &&
-                (iter = pattern_map.find(add_left)) == pattern_map.end() &&
-                (iter = pattern_map.find(add_right)) == pattern_map.end() &&
-                (iter = pattern_map.find(matmul)) == pattern_map.end()) {
-                return false;
-            }
-            auto node = iter->second.get_node_shared_ptr();
-            InsertTranspose(node, node->get_friendly_name(), false);
-        }
+        auto transpose_node = pattern_map.at(transpose);
+        ReplaceTransposeWithReshape(transpose_node.get_node_shared_ptr());
         return true;
     };
 
-    auto matcher = std::make_shared<ngraph::pattern::Matcher>(reshape, "HandleTransposeAfterMatMul");
+    auto matcher = std::make_shared<ngraph::pattern::Matcher>(reshape, "RemoveTransposeAfterMatMul");
+    this->register_matcher(matcher, callback);
+}
+
+InsertTransposeAfterMatMul::InsertTransposeAfterMatMul() {
+    auto matmul = ngraph::pattern::wrap_type<ngraph::opset8::MatMul>({}, [](const ngraph::Output<ngraph::Node>& node) {
+        auto out_shape = node.get_node_shared_ptr()->get_output_shape(0);
+        return std::count_if(out_shape.begin(), out_shape.end(), [](size_t n) { return n > 1; }) > 1; });
+    auto fq1 = ngraph::pattern::wrap_type<ngraph::opset8::FakeQuantize>({matmul, ngraph::pattern::any_input(),
+        ngraph::pattern::any_input(), ngraph::pattern::any_input(), ngraph::pattern::any_input()});
+    auto add_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{matmul, fq1});
+    auto add_left = ngraph::pattern::wrap_type<ngraph::opset8::Add>({add_input, ngraph::pattern::any_input()});
+    auto add_right = ngraph::pattern::wrap_type<ngraph::opset8::Add>({ngraph::pattern::any_input(), add_input});
+    auto fq2_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{matmul, add_left, add_right});
+    auto fq2 = ngraph::pattern::wrap_type<ngraph::opset8::FakeQuantize>({fq2_input, ngraph::pattern::any_input(),
+        ngraph::pattern::any_input(), ngraph::pattern::any_input(), ngraph::pattern::any_input()});
+    auto act_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{fq2_input, fq2});
+    auto act = ngraph::pattern::wrap_type<ngraph::opset8::Relu, ngraph::opset8::Sigmoid,
+            ngraph::opset8::Tanh, ngraph::opset8::Abs, ngraph::opset8::Log, ngraph::opset8::Exp,
+            ngraph::opset8::Sign, ngraph::opset8::Clamp>({act_input});
+    auto reshape_input = std::make_shared<ngraph::pattern::op::Or>(ngraph::OutputVector{act_input, act});
+    auto reshape = ngraph::pattern::wrap_type<ngraph::opset8::Reshape>({reshape_input, ngraph::pattern::any_input()}, VerifyReshape);
+
+    ngraph::matcher_pass_callback callback = [=](ngraph::pattern::Matcher &matcher) {
+        const auto& pattern_map = matcher.get_pattern_value_map();
+        auto reshape_node = pattern_map.at(reshape).get_node_shared_ptr();
+        if (reshape_node->get_output_size() &&
+            std::dynamic_pointer_cast<ngraph::opset8::Transpose>(
+                reshape_node->get_output_target_inputs(0).begin()->get_node()->shared_from_this())) {
+                return false;
+        }
+        if (!GNALimitations::IsTransposeSupported(reshape_node->get_input_shape(0))) return false;
+        auto iter = pattern_map.find(act);
+        if (iter == pattern_map.end() &&
+            (iter = pattern_map.find(fq2)) == pattern_map.end() &&
+            (iter = pattern_map.find(add_left)) == pattern_map.end() &&
+            (iter = pattern_map.find(add_right)) == pattern_map.end() &&
+            (iter = pattern_map.find(matmul)) == pattern_map.end()) {
+            return false;
+        }
+        auto node = iter->second.get_node_shared_ptr();
+        InsertTranspose(node, node->get_friendly_name(), false);
+        return true;
+    };
+
+    auto matcher = std::make_shared<ngraph::pattern::Matcher>(reshape, "InsertTransposeAfterMatMul");
     this->register_matcher(matcher, callback);
 }
 
 HandleTransposesAroundMatMul::HandleTransposesAroundMatMul() {
     add_matcher<HandleTransposeBeforeMatMul>();
-    add_matcher<HandleTransposeAfterMatMul>();
+    add_matcher<RemoveTransposeAfterMatMul>();
+    add_matcher<InsertTransposeAfterMatMul>();
 }
 
 bool TransposeDecomposition::run_on_function(std::shared_ptr<ngraph::Function> f) {

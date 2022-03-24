@@ -28,6 +28,14 @@ static void SwapAndTransposeInputs(
     std::shared_ptr<ngraph::Node> fq = nullptr,
     std::shared_ptr<ngraph::Node> act = nullptr,
     std::shared_ptr<ngraph::Node> transpose = nullptr) {
+    auto create_reshape = [](const ngraph::Shape& shape, std::shared_ptr<ngraph::Node> input_node, const std::string& name) {
+        auto reshape_const = std::make_shared<ngraph::opset8::Constant>(ngraph::element::Type_t::i64,
+            ngraph::Shape{shape.size()}, shape);
+        auto node = std::make_shared<ngraph::opset8::Reshape>(input_node, reshape_const, false);
+        node->set_friendly_name(name + "/reshape_before_transpose");
+        return node;
+    };
+
     auto create_transpose =
         [](ngraph::Output<ngraph::Node> node, const std::string& transpose_name) -> std::shared_ptr<ngraph::Node> {
         ngraph::Shape output_shape = node.get_node_shared_ptr()->get_shape();
@@ -124,6 +132,9 @@ static void SwapAndTransposeInputs(
     }
 
     if (transpose == nullptr) {
+        auto shape = new_node->get_output_shape(0);
+        std::swap(shape[0], shape[1]);
+        new_node = create_reshape(shape, new_node, last_layer_name);
         new_node = create_transpose(new_node, last_layer_name);
         new_ops.push_back(new_node);
     } else {

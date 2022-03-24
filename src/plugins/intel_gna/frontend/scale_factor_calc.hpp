@@ -256,6 +256,21 @@ static bool requantizeInput(InferenceEngine::CNNLayerPtr input, float newOutputS
             return true;
         }
 
+        if (info.isGemm()) {
+            auto in0 = InferenceEngine::CNNNetPrevLayer(layer, 0);
+            auto in1 = InferenceEngine::CNNNetPrevLayer(layer, 1);
+            if (!LayerInfo(in0).isConst()) return false;
+            auto quantDataForConst = InferenceEngine::getInjectedData<QuantizedLayerParams>(*in0);
+            auto quantDataForNonConst = InferenceEngine::getInjectedData<QuantizedLayerParams>(*in1);
+            auto reducer = std::max(1.0f, quantDataForInputLayer->_dst_quant.GetScale() / newOutputScale);
+            auto newWeightsScale = std::max(1.0f, quantDataForConst->_dst_quant.GetScale() / reducer);
+            quantDataForConst->_dst_quant.SetScale(newWeightsScale);
+            quantDataForInputLayer->_dst_quant.SetScale(newWeightsScale * quantDataForNonConst->_dst_quant.GetScale());
+
+            result = ScaleFactorUpdateResult(layer.get());
+            return true;
+        }
+
         if (info.isFullyConnected() || info.isConvolution() || info.isPower()) {
             quantDataForInputLayer->_dst_quant.SetScale(newOutputScale);
             quantDataForInputLayer->_weights_quant.SetScale(newOutputScale / quantDataForInputLayer->_src_quant.GetScale());

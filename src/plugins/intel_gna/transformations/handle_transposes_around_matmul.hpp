@@ -56,10 +56,16 @@ public:
  *       |                       |
  *    [1, A*B]                [1, A*B]
  */
-class HandleTransposeAfterMatMul: public ngraph::pass::MatcherPass {
+class RemoveTransposeAfterMatMul : public ngraph::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("HandleTransposeAfterMatMul", "0");
-    HandleTransposeAfterMatMul();
+  OPENVINO_RTTI("RemoveTransposeAfterMatMul", "0");
+  RemoveTransposeAfterMatMul();
+};
+
+class InsertTransposeAfterMatMul : public ngraph::pass::MatcherPass {
+public:
+  OPENVINO_RTTI("InsertTransposeAfterMatMul", "0");
+  InsertTransposeAfterMatMul();
 };
 
 class HandleTransposesAroundMatMul : public ngraph::pass::GraphRewrite {

@@ -325,6 +325,7 @@ void HandleMultipleActivationsForTheLayerPass::run() {
                 LayerInfo info(inputTo.second);
 
                 if (info.isActivation()) {
+                    if (LayerInfo(l).isConst() && info.isFakeQuantize()) continue;
                     if (odata->getDims().empty()) continue;
                     if (!activations.empty() && odata->getDims()[0] != 1) {
                         THROW_GNA_EXCEPTION << "Unsupported batch size " << odata->getDims()[0]

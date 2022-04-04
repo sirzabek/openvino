@@ -230,10 +230,10 @@ void make_gna_pwl(const DnnActivation&  fun,
             int16_t y_lower = y_min;
             int16_t y_upper = y_max;
             if (fun == kActFakeQuantize && fun.fqParams.set) {
-                x_lower = std::max(FLOAT_TO_INT64(*fun.fqParams.input_low * in_scale), static_cast<int64_t>(x_lower));
-                x_upper = std::min(FLOAT_TO_INT64(*fun.fqParams.input_high * in_scale), static_cast<int64_t>(x_upper));
-                y_lower = std::max(FLOAT_TO_INT32(*fun.fqParams.input_low * out_scale), static_cast<int32_t>(y_lower));
-                y_upper = std::min(FLOAT_TO_INT32(*fun.fqParams.input_high * out_scale), static_cast<int32_t>(y_upper));
+                x_lower = std::max(static_cast<int64_t>(*fun.fqParams.input_low * in_scale), static_cast<int64_t>(x_lower));
+                x_upper = std::min(static_cast<int64_t>(*fun.fqParams.input_high * in_scale), static_cast<int64_t>(x_upper));
+                y_lower = std::max(static_cast<int32_t>(*fun.fqParams.input_low * out_scale), static_cast<int32_t>(y_lower));
+                y_upper = std::min(static_cast<int32_t>(*fun.fqParams.input_high * out_scale), static_cast<int32_t>(y_upper));
             }
             auto n_segments = 2;
             if (fun == kActKaldiLstmClipping) {

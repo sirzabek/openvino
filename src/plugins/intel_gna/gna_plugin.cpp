@@ -642,6 +642,11 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
     OV_ITT_SCOPED_TASK(itt::domains::GNAPlugin, "LoadNetwork");
     std::shared_ptr<InferenceEngine::details::CNNNetworkImpl> convertedNetwork;
 
+    config.gnaCompileTarget = GNAConfigParams::GNA_TARGET_3_0;
+    config.gnaExecTarget = GNAConfigParams::GNA_TARGET_3_0;
+    config.swExactMode = false;
+    config.pluginGna2AccMode = Gna2AccelerationModeHardware;
+
     std::string effectiveGnaCompileTarget = config.gnaCompileTarget;
     if (gnadevice) {
         effectiveGnaCompileTarget = gnadevice->getEffectiveGnaCompileTarget();
@@ -1314,8 +1319,8 @@ GnaWaitStatus GNAPlugin::WaitFor(uint32_t request_idx, int64_t millisTimeout) {
         auto isScalar = outputBlob->getTensorDesc().getLayout() == Layout::SCALAR;
         auto is3D = outputBlob->getTensorDesc().getLayout() == Layout::CHW;
         auto batchSize = (is1D || isScalar || is3D) ? 1 : dims[0];
-        auto elementsPerBatch = isScalar ? 1 : (is1D || is3D ? details::product(std::begin(dims), std::end(dims)) :
-            details::product(++std::begin(dims), std::end(dims)));
+        auto elementsPerBatch = isScalar ? 1 : (is1D || is3D ? InferenceEngine::details::product(std::begin(dims), std::end(dims))
+                                                    : InferenceEngine::details::product(++std::begin(dims), std::end(dims)));
 
         auto transpose_output_info = transpose_outputs_info.find(outputBlobIt.first);
         if (transpose_output_info != std::end(transpose_outputs_info) && FoundPartToTranspose(transpose_output_info->second)) {

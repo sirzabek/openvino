@@ -80,7 +80,7 @@ public:
  */
 class TransposeDecomposition : public ngraph::pass::FunctionPass {
 public:
-    NGRAPH_RTTI_DECLARATION;
+    OPENVINO_RTTI("TransposeDecomposition", "0");
     bool run_on_function(std::shared_ptr<ngraph::Function> f) override;
 };
 

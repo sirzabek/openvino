@@ -29,6 +29,8 @@ struct ScoreErrorT {
     float maxRelError;
     float sumRelError;
     float sumSquaredRelError;
+    float maxAbsRefScore;
+    float sumAbsRefScore;
 };
 
 /**
@@ -98,6 +100,8 @@ void clear_score_error(ScoreErrorT* error) {
     error->maxRelError = 0.0;
     error->sumRelError = 0.0;
     error->sumSquaredRelError = 0.0;
+    error->maxAbsRefScore = 0.0;
+    error->sumAbsRefScore = 0.0;
 }
 
 /**
@@ -111,9 +115,13 @@ void update_score_error(ScoreErrorT* error, ScoreErrorT* totalError) {
     totalError->numScores += error->numScores;
     totalError->sumRmsError += error->rmsError;
     totalError->sumError += error->sumError;
+    totalError->sumAbsRefScore += error->sumAbsRefScore;
     totalError->sumSquaredError += error->sumSquaredError;
     if (error->maxError > totalError->maxError) {
         totalError->maxError = error->maxError;
+    }
+    if (error->maxAbsRefScore > totalError->maxAbsRefScore) {
+        totalError->maxAbsRefScore = error->maxAbsRefScore;
     }
     totalError->sumRelError += error->sumRelError;
     totalError->sumSquaredRelError += error->sumSquaredRelError;
@@ -153,7 +161,11 @@ void compare_scores(float* ptrScoreArray,
             float squared_rel_error = rel_error * rel_error;
             scoreError->numScores++;
             scoreError->sumError += error;
+            scoreError->sumAbsRefScore += fabs(refscore);
             scoreError->sumSquaredError += squared_error;
+            if (fabs(refscore) > scoreError->maxAbsRefScore) {
+                scoreError->maxAbsRefScore = fabs(refscore);
+            }
             if (error > scoreError->maxError) {
                 scoreError->maxError = error;
             }
@@ -267,6 +279,8 @@ float get_gna_frequency_mhz() {
  * @return none.
  */
 void print_reference_compare_results(ScoreErrorT const& totalError, size_t framesNum, std::ostream& stream) {
+    stream << " max abs ref score: " << totalError.maxAbsRefScore << std::endl;
+    stream << " avg abs ref score: " << totalError.sumAbsRefScore / totalError.numScores << std::endl;
     stream << "         max error: " << totalError.maxError << std::endl;
     stream << "         avg error: " << totalError.sumError / totalError.numScores << std::endl;
     stream << "     avg rms error: " << totalError.sumRmsError / framesNum << std::endl;
@@ -533,4 +547,38 @@ std::map<std::string, std::string> parse_input_layouts(const std::string& layout
     if (!search_string.empty())
         throw std::logic_error("Can't parse input parameter string: " + layout_string);
     return return_value;
+}
+
+/**
+ * @brief Parse parameters for inputs/outputs like as "<name1>=<file1.ark/.npz>,<name2>=<file2.ark/.npz>" or
+ * "<file.ark/.npz>" in case of one input/output
+ * @param file_paths_string input/output path
+ * @return pair of filename and vector of tensor_names
+ */
+std::pair<std::string, std::vector<std::string>> parse_parameters(const std::string file_paths_string) {
+    auto search_string = file_paths_string;
+    char comma_delim = ',';
+    char equal_delim = '=';
+    std::string filename = "";
+    std::vector<std::string> tensor_names;
+    std::vector<std::string> filenames;
+    if (!std::count(search_string.begin(), search_string.end(), comma_delim) &&
+        !std::count(search_string.begin(), search_string.end(), equal_delim)) {
+        return {search_string, tensor_names};
+    }
+    search_string += comma_delim;
+    std::vector<std::string> splitted = split(search_string, comma_delim);
+    for (size_t j = 0; j < splitted.size(); j++) {
+        auto semicolon_pos = splitted[j].find_first_of(equal_delim);
+        if (semicolon_pos != std::string::npos) {
+            tensor_names.push_back(splitted[j].substr(0, semicolon_pos));
+            filenames.push_back(splitted[j].substr(semicolon_pos + 1, std::string::npos));
+        }
+    }
+    for (std::vector<std::string>::const_iterator name = filenames.begin(); name != filenames.end(); ++name) {
+        filename += *name;
+        if (name != filenames.end() - 1)
+            filename += comma_delim;
+    }
+    return {filename, tensor_names};
 }

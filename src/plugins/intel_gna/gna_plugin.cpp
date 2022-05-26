@@ -642,11 +642,6 @@ void GNAPlugin::LoadNetwork(CNNNetwork & _network) {
     OV_ITT_SCOPED_TASK(itt::domains::GNAPlugin, "LoadNetwork");
     std::shared_ptr<InferenceEngine::details::CNNNetworkImpl> convertedNetwork;
 
-    config.gnaCompileTarget = GNAConfigParams::GNA_TARGET_3_0;
-    config.gnaExecTarget = GNAConfigParams::GNA_TARGET_3_0;
-    config.swExactMode = false;
-    config.pluginGna2AccMode = Gna2AccelerationModeHardware;
-
     std::string effectiveGnaCompileTarget = config.gnaCompileTarget;
     if (gnadevice) {
         effectiveGnaCompileTarget = gnadevice->getEffectiveGnaCompileTarget();

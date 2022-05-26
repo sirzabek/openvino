@@ -1341,15 +1341,7 @@ class ScaleFactorPerLayer<InferenceEngine::WeightableLayer*, QUANT_DESC> {
                 quant->_weights_quant.SetScale(quant->_weights_quant.GetScale() * MAX_OUT_MULTIPLIER);
             }
 
-            double weights_reducer = 1.0;
-            auto conv = dynamic_cast<InferenceEngine::ConvolutionLayer *>(wl);
-            if (conv && !LayerInfo(conv).isConvolutionFilter()) {
-                const auto inDepth = GetDataDimSize(conv->insData.front().lock(), InferenceEngine::DataDimName::C);
-                weights_reducer = GNAConvolutionLayer::getWeightsReducer(*conv);
-                weights_reducer *= MAX_VAL_2B_FEAT * scaleRange * inDepth / std::numeric_limits<int32_t>::max();
-                weights_reducer = std::max(1.0, weights_reducer);
-            }
-            quant->_weights_quant.SetScale(quant->_weights_quant.GetScale() / weights_reducer);
+            quant->_weights_quant.SetScale(quant->_weights_quant.GetScale());
         }
         double tmp_dst_quant_scale = quant->_weights_quant.GetScale() * quant->_src_quant.GetScale();
         if (weightsSize == 1) {

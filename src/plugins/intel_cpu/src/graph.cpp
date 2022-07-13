@@ -50,6 +50,8 @@
 #include <low_precision/low_precision.hpp>
 #include "memory_desc/dnnl_blocked_memory_desc.h"
 
+#include "fileutils.hpp"
+
 using namespace dnnl;
 using namespace InferenceEngine;
 using namespace InferenceEngine::details;
@@ -803,6 +805,22 @@ void Graph::PushInputData(const std::string& name, const InferenceEngine::Blob::
         const auto& outDims = node->getOutputShapeAtPort(0);
 
         const void *ext_data_ptr = in->cbuffer();
+        static std::map<std::string, int> inputNames;
+        if (inputNames.find(name) == inputNames.end()) {
+            inputNames[name] = 1;
+        } else {
+            inputNames[name]++;
+        }
+        ArkFile arkFile;
+        const auto fileName = name + "_dump.ark";
+        const auto frameSize = std::accumulate(std::begin(outDims.getDims()), std::end(outDims.getDims()), 1, std::multiplies<size_t>());
+        arkFile.save_file(fileName.c_str(),
+                          inputNames[name] == 1 ? false : true,
+                          name,
+                          ext_data_ptr,
+                          inputNames[name],
+                          frameSize);
+
         void *inter_data_ptr = childEdge->getMemory().GetData();
 
         if (ext_data_ptr != inter_data_ptr) {

@@ -104,6 +104,7 @@ void ArkFile::save_file(const char* fileName,
         const auto curPtr = out_file.tellp();
         out_file.seekp(0);
         out_file.write(name.c_str(), name.length());  // write name
+        out_file.write("\40", 1);
         out_file.write("\0", 1);
         out_file.write("BFM ", 4);
         out_file.write("\4", 1);

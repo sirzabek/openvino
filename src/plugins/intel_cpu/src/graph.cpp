@@ -812,7 +812,7 @@ void Graph::PushInputData(const std::string& name, const InferenceEngine::Blob::
             inputNames[name]++;
         }
         ArkFile arkFile;
-        const auto fileName = name + "_dump.ark";
+        const auto fileName = name + ".ark";
         const auto frameSize = std::accumulate(std::begin(outDims.getDims()), std::end(outDims.getDims()), 1, std::multiplies<size_t>());
         arkFile.save_file(fileName.c_str(),
                           inputNames[name] == 1 ? false : true,

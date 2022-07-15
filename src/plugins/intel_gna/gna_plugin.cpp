@@ -894,15 +894,16 @@ void GNAPlugin::LoadNetwork(const CNNNetwork& _network) {
     uint16_t id = 0;
     for (auto& layer : sortedNet) {
         // set order id for layers to use it in compact mode
+        LayerInfo layerInfo(layer);
         IE_SUPPRESS_DEPRECATED_START
-        layer->userValue.v_int = id++;
+        layer->userValue.v_int = layerInfo.isCopyDelayed() ? std::numeric_limits<int>::max() : id++;
         IE_SUPPRESS_DEPRECATED_END
         auto generic = dynamic_cast<GenericLayer*>(layer.get());
         if (generic == nullptr) {
             sortedNoMem.push_back(layer);
             continue;
         }
-        LayerInfo layerInfo(layer);
+
         if (layerInfo.isMemory()) {
             // collect all memory pairs
             auto id = generic->GetParamAsString("id");

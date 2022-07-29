@@ -15,10 +15,10 @@
 
 namespace SubgraphTestsDefinitions {
 typedef std::tuple<
-    InferenceEngine::Precision,         // Network Precision
-    std::string,                        // Target Device
-    std::vector<size_t>,                // Input shape
-    std::map<std::string, std::string>  // Configuration
+    InferenceEngine::Precision,                     // Network Precision
+    std::string,                                    // Target Device
+    std::pair<std::vector<size_t>, ngraph::Shape>,  // Input shape and permute order
+    std::map<std::string, std::string>              // Configuration
 > TransposeAddParams;
 
 class TransposeAdd : public testing::WithParamInterface<TransposeAddParams>,

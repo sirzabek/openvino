@@ -8,13 +8,16 @@ namespace SubgraphTestsDefinitions {
 std::string TransposeAdd::getTestCaseName(testing::TestParamInfo<TransposeAddParams> obj) {
     InferenceEngine::Precision netPrecision;
     std::string targetName;
-    std::vector<size_t> input_shape;
+    std::pair<std::vector<size_t>, ngraph::Shape> input_shapes;
     std::map<std::string, std::string> configuration;
 
-    std::tie(netPrecision, targetName, input_shape, configuration) = obj.param;
+    std::tie(netPrecision, targetName, input_shapes, configuration) = obj.param;
+    std::vector<size_t> input_shape = input_shapes.first;
+    ngraph::Shape permute_order = input_shapes.second;
     std::ostringstream results;
 
     results << "IS=" << CommonTestUtils::vec2str(std::vector<size_t>(input_shape.begin(), input_shape.end())) << "_";
+    results << "permuteOrder=" << CommonTestUtils::vec2str(std::vector<size_t>(permute_order.begin(), permute_order.end())) << "_";
     results << "netPRC=" << netPrecision.name() << "_";
     results << "targetDevice=" << targetName;
     return results.str();
@@ -22,10 +25,13 @@ std::string TransposeAdd::getTestCaseName(testing::TestParamInfo<TransposeAddPar
 
 void TransposeAdd::SetUp() {
     InferenceEngine::Precision netPrecision;
-    std::vector<size_t> input_shape;
+    std::pair<std::vector<size_t>, ngraph::Shape> input_shapes;
     std::map<std::string, std::string> additional_config;
 
-    std::tie(netPrecision, targetDevice, input_shape, additional_config) = this->GetParam();
+    std::tie(netPrecision, targetDevice, input_shapes, additional_config) = this->GetParam();
+    std::vector<size_t> input_shape = input_shapes.first;
+    ngraph::Shape permute_order = input_shapes.second;
+
     GTEST_ASSERT_GE(input_shape.size(), 2);
 
     configuration.insert(additional_config.begin(), additional_config.end());
@@ -33,9 +39,12 @@ void TransposeAdd::SetUp() {
     auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
     auto params = ngraph::builder::makeParams(ngPrc, {input_shape});
 
-    ngraph::Shape permute_order(input_shape.size());
-    std::iota(std::begin(permute_order), std::end(permute_order), 0);
-    std::iter_swap(std::end(permute_order) - 2, std::end(permute_order) - 1);
+    if (permute_order.empty()) {
+        permute_order.resize(input_shape.size());
+        std::iota(std::begin(permute_order), std::end(permute_order), 0);
+        std::iter_swap(std::end(permute_order) - 2, std::end(permute_order) - 1);    
+    }
+
     auto transpose_in_params = std::make_shared<ngraph::opset8::Constant>(ngraph::element::i64,
         ngraph::Shape{permute_order.size()}, permute_order);
     auto transpose_in = std::make_shared<ngraph::opset8::Transpose>(params[0], transpose_in_params);

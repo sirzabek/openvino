@@ -31,6 +31,7 @@ constexpr uint32_t affineMaxBatchSize = 8;
 
 constexpr uint32_t maxPoolMaxWindowSize = 6;
 constexpr uint32_t copyMaxGrouping = 8;
+constexpr uint32_t transposeMaxMinDim = 8;
 constexpr uint32_t transposeMaxSize = 65528;
 
 // TODO In the future there should be created class/struct representing all limitations for specific device versions.

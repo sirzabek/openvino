@@ -1262,7 +1262,7 @@ class ScaleFactorPerLayer<InferenceEngine::WeightableLayer*, QUANT_DESC> {
         if ( !wl ) {
             THROW_GNA_EXCEPTION << "Incorrect Weightable Layer pointer  \n";
         } else if (!wl->_weights) {
-            THROW_GNA_EXCEPTION << "Incorrect weight value for " << wl->name << ":" << wl->type << "\n";
+            //THROW_GNA_EXCEPTION << "Incorrect weight value for " << wl->name << ":" << wl->type << "\n";
         }
 
         int inputsSize = ScaleFactorCalculator<QUANT_DESC>::GetInputsBytesSize();
@@ -1307,6 +1307,16 @@ class ScaleFactorPerLayer<InferenceEngine::WeightableLayer*, QUANT_DESC> {
             } else {
                 THROW_GNA_EXCEPTION << "Unsupported weights size of: " << weightsSize;
             }
+
+            if (wl->insData.size() > 1 && !wl->_weights) {
+                auto weights_input = wl->insData[1].lock();
+                auto weights_layer = getCreatorLayer(weights_input).lock();
+                if (LayerInfo(weights_layer).isConst()) {
+                    auto weights_blob = weights_layer->blobs["custom"];
+                    wl->_weights = weights_blob;
+                }
+            }
+
             quant->_weights_quant.SetScale(
                 ScaleFactorForQuantization(wl->_weights->buffer().as<float *>(), scaleRange, wl->_weights->size()));
             if (quant->_weights_quant.GetScale() == -1.0f || (fakeQuantize && LayerInfo(wl).isConcatAlignFilter())) {

@@ -1315,7 +1315,7 @@ uint32_t GNAPlugin::QueueInference(const InferenceEngine::BlobMap& inputs, Infer
 
         auto dims = input.second->getTensorDesc().getDims();
         auto importedElements = is1D ? dims[0] : InferenceEngine::details::product(++std::begin(dims), std::end(dims));
-        auto importedFrames = (is3D || is1D) ? 1 : dims[0];
+        auto importedFrames = (is1D) ? 1 : dims[0];
         auto targetGroups = is1D ? 1 : dims[0];  // TODO: no proper support for groups yet
 
         auto importedElementSizeBytes = gnaFlags->sw_fp32 ? 4 : (gnaFlags->input_low_precision ? 1 : 2);
@@ -1430,7 +1430,7 @@ RequestStatus GNAPlugin::WaitFor(uint32_t request_idx, int64_t millisTimeout) {
         auto is1D = outputBlob->getTensorDesc().getLayout() == Layout::C;
         auto isScalar = outputBlob->getTensorDesc().getLayout() == Layout::SCALAR;
         auto is3D = outputBlob->getTensorDesc().getLayout() == Layout::CHW;
-        auto batchSize = (is1D || isScalar || is3D) ? 1 : dims[0];
+        auto batchSize = (is1D || isScalar) ? 1 : dims[0];
         auto elementsPerBatch =
             isScalar ? 1
                      : (is1D ? dims.front() : InferenceEngine::details::product(++std::begin(dims), std::end(dims)));

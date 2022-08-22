@@ -12,36 +12,36 @@ std::vector<std::pair<std::vector<size_t>, ngraph::Shape>> input_shapes {
     // GNA-compatible transpose
     {{1, 2, 4, 32}, {0, 3, 1, 2}},
     {{1, 2, 8, 8}, {0, 3, 1, 2}},
-    ////{{2, 4, 32}, {2, 0, 1}}, TODO: exporting scores with firs dim != 1 doesn't work
-    ////{{2, 16, 8}, {2, 0, 1}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{2, 4, 32}, {2, 0, 1}},
+    {{2, 16, 8}, {2, 0, 1}},
     {{1, 2, 4, 4}, {0, 2, 3, 1}},
     {{1, 16, 4, 2}, {0, 2, 3, 1}},
     {{1, 2, 2, 32}, {0, 2, 3, 1}},
-    ////{{2, 4, 4}, {1, 2, 0}}, TODO: exporting scores with firs dim != 1 doesn't work
-    ////{{16, 4, 2}, {1, 2, 0}}, TODO: exporting scores with firs dim != 1 doesn't work
-    ////{{2, 2, 32}, {1, 2, 0}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{2, 4, 4}, {1, 2, 0}},
+    {{16, 4, 2}, {1, 2, 0}},
+    {{2, 2, 32}, {1, 2, 0}},
 
 
     // GNA-incompatible transpose
     {{1, 1, 32, 64}, {0, 1, 3, 2}},
     {{1, 64, 32}, {0, 2, 1}},
-    ////{{128, 32}, {1, 0}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{128, 32}, {1, 0}},
 
 
     // Type 2 cases (see decompose_transpose.cpp in GNA Plugin)
     {{1, 16, 8, 32}, {0, 2, 1, 3}},
-    ////{{4, 8, 64}, {1, 0, 2}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{4, 8, 64}, {1, 0, 2}},
 
 
     // Type 3 cases (see decompose_transpose.cpp in GNA Plugin)
     {{1, 2, 4, 32}, {0, 1, 3, 2}},
-    ////{{4, 8, 32}, {0, 2, 1}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{4, 8, 32}, {0, 2, 1}},
 
 
     // GNA natively supported transposes
     {{1, 1, 4, 32}, {0, 1, 3, 2}},
     {{1, 4, 32}, {0, 2, 1}},
-    ////{{4, 32}, {1, 0}}, TODO: exporting scores with firs dim != 1 doesn't work
+    {{4, 32}, {1, 0}},
     {{1, 4, 32}, {2, 0, 1}},
     {{1, 4, 32}, {1, 2, 0}},
     {{1, 4, 32}, {}},

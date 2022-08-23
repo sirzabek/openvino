@@ -232,7 +232,6 @@ static bool DecomposeTransposeType3(const std::shared_ptr<opset9::Transpose> tra
             chunks.push_back(transpose_data.input);
         }
 
-        //auto transpose_const = std::make_shared<opset9::Constant>(element::i32, Shape(transpose_data.order.size()), transpose_data.order);
         std::shared_ptr<Node> transpose_const = GetTransposeOrder(transpose_data);
 
         OutputVector transpose_parts;

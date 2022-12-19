@@ -306,8 +306,8 @@ if(ENABLE_INTEL_GNA)
             GNA_LIB_DIR
             libGNA_INCLUDE_DIRS
             libGNA_LIBRARIES_BASE_PATH)
-        set(GNA_VERSION "03.00.00.1910")
-        set(GNA_HASH "894ddbc0ae3459f04513b853b0cabc32890dd4ea37228a022b6a32101bdbb7f8")
+        set(GNA_VERSION "03.06.00.1936")
+        set(GNA_HASH "ec106adad866212d214008ef628e7c36885f38bead1b654ecb273a6f48dc14af")
 
         set(FILES_TO_EXTRACT_LIST gna_${GNA_VERSION}/include)
         if(WIN32)
@@ -316,13 +316,15 @@ if(ENABLE_INTEL_GNA)
             LIST(APPEND FILES_TO_EXTRACT_LIST gna_${GNA_VERSION}/linux)
         endif()
 
+        set(IE_PATH_TO_DEPS "gna_temp")
         RESOLVE_DEPENDENCY(GNA_EXT_DIR
-                ARCHIVE_UNIFIED "gna/gna_${GNA_VERSION}.zip"
+                ARCHIVE_UNIFIED "GNA/gna_${GNA_VERSION}.zip"
                 TARGET_PATH "${TEMP}/gna_${GNA_VERSION}"
                 VERSION_REGEX ".*_([0-9]+.[0-9]+.[0-9]+.[0-9]+).*"
                 FILES_TO_EXTRACT FILES_TO_EXTRACT_LIST
                 SHA256 ${GNA_HASH}
-                USE_NEW_LOCATION TRUE)
+                USE_NEW_LOCATION FALSE)
+		unset(IE_PATH_TO_DEPS)
     update_deps_cache(GNA_EXT_DIR "${GNA_EXT_DIR}" "Path to GNA root folder")
     debug_message(STATUS "gna=" ${GNA_EXT_DIR})
 

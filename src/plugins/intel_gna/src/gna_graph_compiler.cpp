@@ -219,7 +219,7 @@ void GNAPluginNS::GNAGraphCompiler::SetValidatorTarget(const std::string& target
 }
 
 bool GNAPluginNS::GNAGraphCompiler::ShouldUseOnlyConv2DGnaIface() const {
-    return gna_config.gnaCompileTarget == common::kGnaTarget3_5;
+    return (gna_config.gnaCompileTarget == common::kGnaTarget3_5 || gna_config.gnaCompileTarget == common::kGnaTarget4_0);
 }
 
 void GNAPluginNS::GNAGraphCompiler::ValidateCnn2D(const std::string& name,

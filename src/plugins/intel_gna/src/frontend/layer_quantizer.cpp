@@ -360,7 +360,8 @@ InferenceEngine::Precision GetWeightsPrecision(const LayerInfo& layer_info,
                                                const QuantizedLayerParams& quant_layer_params,
                                                const Config& gna_config) {
     if ((layer_info.isConvolution() || layer_info.isConvolutionFilter())
-        && gna_config.gnaCompileTarget != common::kGnaTarget3_5 || layer_info.isScaleShift()) {
+        && (gna_config.gnaCompileTarget != common::kGnaTarget3_5 && gna_config.gnaCompileTarget != common::kGnaTarget4_0)
+        || layer_info.isScaleShift()) {
         return InferenceEngine::Precision::I16;
     }
 

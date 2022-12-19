@@ -120,6 +120,7 @@ enum class HWGeneration {
     GNA_2_0 = 1,    //!< GNA HW generation 2.0
     GNA_3_0 = 2,    //!< GNA HW generation 3.0
     GNA_3_5 = 3,    //!< GNA HW generation 3.5
+    GNA_4_0 = 4,    //!< GNA HW generation 4.0
 };
 
 /** @cond INTERNAL */
@@ -133,6 +134,8 @@ inline std::ostream& operator<<(std::ostream& os, const HWGeneration& hw_generat
         return os << "GNA_3_0";
     case HWGeneration::GNA_3_5:
         return os << "GNA_3_5";
+    case HWGeneration::GNA_4_0:
+        return os << "GNA_4_0";
     default:
         throw ov::Exception{"Unsupported HW generation!"};
     }
@@ -149,6 +152,8 @@ inline std::istream& operator>>(std::istream& is, HWGeneration& hw_generation) {
         hw_generation = HWGeneration::GNA_3_0;
     } else if (str == "GNA_3_5") {
         hw_generation = HWGeneration::GNA_3_5;
+    } else if (str == "GNA_4_0") {
+        hw_generation = HWGeneration::GNA_4_0;
     } else {
         throw ov::Exception{"Unsupported HW generation: " + str};
     }

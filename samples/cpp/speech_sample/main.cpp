@@ -230,6 +230,8 @@ int main(int argc, char* argv[]) {
                 hw_target = ov::intel_gna::HWGeneration::GNA_3_0;
             } else if (target == "GNA_TARGET_3_5") {
                 hw_target = ov::intel_gna::HWGeneration::GNA_3_5;
+            } else if (target == "GNA_TARGET_4_0") {
+                hw_target = ov::intel_gna::HWGeneration::GNA_4_0;
             } else if (!target.empty()) {
                 slog::warn << "Unsupported target: " << target << slog::endl;
             }

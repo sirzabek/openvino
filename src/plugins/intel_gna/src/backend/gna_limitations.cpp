@@ -269,7 +269,7 @@ bool Validator_35::IsPaddingSupported() const {
 std::unique_ptr<AbstractValidator> AbstractValidator::Create(const std::string& target) {
     if (target == common::kGnaTarget3_0) {
         return tools::make_unique<Validator_30>();
-    } else if (target == common::kGnaTarget3_5) {
+    } else if (target == common::kGnaTarget3_5 || target == common::kGnaTarget4_0) {
         return tools::make_unique<Validator_35>();
     }
     return nullptr;

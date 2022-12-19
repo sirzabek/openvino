@@ -93,6 +93,7 @@ Gna2DeviceVersion getEmbeddedTargetFromCompileTarget(const std::string compileTa
     static const std::map<std::string, Gna2DeviceVersion> targetMap = {
         {GNAPluginNS::common::kGnaTarget3_1, Gna2DeviceVersionEmbedded3_1},
         {GNAPluginNS::common::kGnaTarget3_5, Gna2DeviceVersionEmbedded3_5},
+        {GNAPluginNS::common::kGnaTarget4_0, Gna2DeviceVersionEmbedded4_0},
     };
     auto found = targetMap.find(compileTarget);
     if (found == targetMap.end()) {
@@ -107,6 +108,7 @@ Gna2DeviceVersion getTlvTargetFromCompileTarget(const std::string compileTarget)
     static const std::set<Gna2DeviceVersion> supportedTargets = {
         Gna2DeviceVersionEmbedded3_1,
         Gna2DeviceVersionEmbedded3_5,
+        Gna2DeviceVersionEmbedded4_0,
     };
     const auto found = supportedTargets.count(target) > 0;
     if (!found) {

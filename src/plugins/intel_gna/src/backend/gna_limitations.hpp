@@ -18,8 +18,7 @@
 #include "gna_lib_ver_selector.hpp"
 #include "legacy/ngraph_ops/convolution_ie.hpp"
 #include "legacy/ngraph_ops/fully_connected.hpp"
-#include "ngraph/opsets/opset7.hpp"
-#include "ngraph/opsets/opset9.hpp"
+#include "openvino/opsets/opset12.hpp"
 #include "ops/gna_convolution.hpp"
 #include "ops/gna_max_pool.hpp"
 
@@ -124,6 +123,19 @@ public:
                                OvGnaType inPrecision,
                                bool exception = true) const = 0;
 
+    virtual bool ValidateDwsc(const std::string& name,
+                              const uint32_t inHeight,
+                              const uint32_t inWidth,
+                              const uint32_t inChannels,
+                              const uint32_t kH,
+                              const uint32_t kW,
+                              const uint32_t kN,
+                              const uint32_t strideH,
+                              const uint32_t strideW,
+                              const uint32_t dilationH,
+                              const uint32_t dilationW,
+                              bool exception = true) const = 0;
+
     virtual bool ValidatePooling2D(const std::string& name,
                                    const uint32_t windowH,
                                    const uint32_t windowW,
@@ -195,6 +207,7 @@ public:
      */
     static bool is_fc_supported(const std::shared_ptr<ngraph::op::FullyConnected>& fully_connected,
                                 bool is_exception_allowed = false);
+
     /**
      * @brief Validates if split is supported by GNA
      * @param node split
@@ -215,6 +228,7 @@ public:
      * @return true if supported
      */
     static bool is_transpose_supported(const std::shared_ptr<const ov::Node>& node);
+
     /**
      * @brief Validates if convolution is supported by GNA
      * @param conv_gna GNA convolution
@@ -225,6 +239,18 @@ public:
     bool is_conv_supported(const std::shared_ptr<ov::intel_gna::op::GNAConvolution>& conv_gna,
                            const InferenceEngine::Precision gna_precision,
                            bool is_exception_allowed = false);
+
+    /**
+     * @brief Validates if a group convolution is supported by GNA's DWSC operation
+     * @param group_conv group convolution
+     * @param gna_precision GNA inference precision
+     * @param is_exception_allowed flag specifies whether exception is allowed
+     * @return true if supported
+     */
+    bool is_group_convolution_supported(const std::shared_ptr<ov::opset12::GroupConvolution>& group_conv,
+                                        const InferenceEngine::Precision gna_precision,
+                                        bool is_exception_allowed = false);
+
     /**
      * @brief Validates if max pooling is supported by GNA
      * @param max_pool max pooling
@@ -287,6 +313,7 @@ public:
     constexpr static uint32_t kMaxLayersCountGNA1_0 = 1023;
     constexpr static uint32_t kMaxLayersCountGNA2_0 = 4096;
     constexpr static uint32_t kMaxLayersCountGNA3_X = 8192;
+    constexpr static uint32_t kDWSCFilterDepth = 1;
 
     // Currently split layer only supports 2 bytes in int16 and int8 mode.
     // In fp32 mode this is not necessary but is useful for testing

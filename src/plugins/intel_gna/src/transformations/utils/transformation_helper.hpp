@@ -47,6 +47,14 @@ struct ConvData {
 void GetConvData(std::shared_ptr<ngraph::opset7::Convolution> conv, ConvData& conv_data);
 
 /**
+ * @brief gets all group convolution related data into a struct for further processing
+ * @param conv group convolution node to get data of
+ * @param conv_data group convolution data structure to put data into
+ * @return void
+ */
+void GetConvData(std::shared_ptr<ngraph::opset7::GroupConvolution> conv, ConvData& conv_data);
+
+/**
  * @brief gets all convolution related data into a struct for further processing
  * @param conv GNA custom convolution node to get data of
  * @param conv_data convolution data structure to put data into

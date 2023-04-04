@@ -47,6 +47,7 @@ class GNADeviceHelper {
     Gna2DeviceVersion exportGeneration = Gna2DeviceVersionEmbedded1_0;
     bool isGnaLibVersion2_1 = false;
     bool isGnaLibVersion3_0 = false;
+    bool isGnaLibVersion3_5 = false;
 
     static const uint32_t TotalGna2InstrumentationPoints = 2;
     Gna2InstrumentationPoint gna2InstrumentationPoints[TotalGna2InstrumentationPoints] = {
@@ -85,6 +86,9 @@ public:
         }
         if (gnaLibVersion.rfind("3.0", 0) == 0) {
             isGnaLibVersion3_0 = true;
+        }
+        if (gnaLibVersion.rfind("3.5", 0) == 0) {
+            isGnaLibVersion3_5 = true;
         }
     }
 

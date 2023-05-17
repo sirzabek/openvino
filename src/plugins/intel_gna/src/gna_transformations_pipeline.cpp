@@ -9,6 +9,7 @@
 #include "legacy/transformations/convert_opset1_to_legacy/convert_opset1_to_legacy.hpp"
 #include "ngraph/opsets/opset7.hpp"
 #include "openvino/pass/manager.hpp"
+#include "openvino/pass/serialize.hpp"
 #include "optimizer/gna_pass_manager.hpp"
 #include "transformations/broadcast_const.hpp"
 #include "transformations/common_optimizations/add_fake_quantize_fusion.hpp"
@@ -28,6 +29,7 @@
 #include "transformations/decompose_2d_convolution.hpp"
 #include "transformations/decompose_mvn.hpp"
 #include "transformations/disable_decompression_convert_constant_folding.hpp"
+#include "transformations/handle_matmul_reshape_transpose.hpp"
 #include "transformations/handle_transposes_around_matmul.hpp"
 #include "transformations/init_node_info.hpp"
 #include "transformations/insert_copy_layer.hpp"
@@ -76,6 +78,8 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::pass::ConvertMVN1ToMVN6>();
     manager.register_pass<ov::intel_gna::pass::DecomposeMVN>();
     manager.register_pass<ov::pass::CommonOptimizations>();
+    manager.register_pass<ov::intel_gna::pass::RemoveTransposeBeforeAdd>();
+    manager.register_pass<ov::intel_gna::pass::InsertTransposeBeforeMultiply>();
     manager.register_pass<ov::intel_gna::pass::RemoveInputConvert>();
     manager.register_pass<ov::intel_gna::pass::RemoveOutputConvert>();
     manager.register_pass<ov::pass::ConvertSequenceToTensorIterator>();
@@ -100,12 +104,14 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithFq>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithAdd>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmul>();
+    manager.register_pass<ov::intel_gna::pass::InsertTransposeBeforeMatMul>();
     manager.register_pass<ov::intel_gna::pass::SwapInputMatMulWithTrailingTranspose>();
     manager.register_pass<ov::intel_gna::pass::SwapInputMatMulWithAct>();
     manager.register_pass<ov::intel_gna::pass::SwapInputMatMulWithFq>();
     manager.register_pass<ov::intel_gna::pass::SwapInputMatMulWithBias>();
     manager.register_pass<ov::intel_gna::pass::SwapInputMatMul>();
     manager.register_pass<ov::intel_gna::pass::HandleTransposesAroundMatMul>();
+    manager.register_pass<ov::intel_gna::pass::ReplaceTransposeBeforeMatMul>();
     manager.register_pass<ov::intel_gna::pass::InsertTransposeAfterConvOrPool>();
     manager.register_pass<ov::intel_gna::pass::Unfuse2dto4dReshapeAndTranspose>();
     manager.register_pass<ov::intel_gna::pass::Unfuse4dto2dReshapeAndTranspose>();
@@ -206,7 +212,7 @@ void TransformationsPipeline::apply_legacy(const InferenceEngine::CNNNetwork& ne
     passes->registerPass<FuseFQIntoWeightsPass>();
     passes->registerPass<MoveFakeQuantizeLayerIntoQuantParamsPass>();
 
-    passes->registerPass<TransposeWeightsFromNCHWToNHWCPass>();
+    // passes->registerPass<TransposeWeightsFromNCHWToNHWCPass>();
 
     passes->registerPass<SubstitutePReluPass>();
 

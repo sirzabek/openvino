@@ -1390,6 +1390,8 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
         log::debug() << "Component + " << i << "=GNA_" << std::distance(gnaModel->Operations, gnaOperation) << "\n";
 
         auto& comp = component[i];
+        std::cout << "Layer " << std::distance(gnaModel->Operations, gnaOperation) << " = " << comp.original_layer_name
+                  << "\n";
         switch (comp.operation) {
         case kDnnAffineOp:
             HelperGna2OperationInitFullyConnectedAffine(

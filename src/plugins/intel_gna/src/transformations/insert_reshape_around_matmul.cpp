@@ -100,6 +100,7 @@ static bool InsertReshape(ngraph::pattern::Matcher& matcher,
             while (!nodes.empty()) {
                 auto node_copy = nodes.back()->clone_with_new_inputs(nodes.back()->input_values());
                 ngraph::copy_runtime_info(nodes.back(), node_copy);
+                node_copy->set_friendly_name(nodes.back()->get_friendly_name());
                 ngraph::replace_node(nodes.back(), node_copy);
                 nodes.pop_back();
             }

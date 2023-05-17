@@ -792,7 +792,12 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
         currentComponent,
         {{in_batch, in_height, effective_input_width, in_channels}, inputPrec, {}},  // NHWC for GNA
         {{out_batch, out_height, out_width, out_channels}, outputPrec, {}},
-        {{is_dwsc ? limitations::dwscFilterDepth : filter_n, convolution._kernel_y, effective_kernel_width, in_channels}, weightPrec, {}},
+        {{is_dwsc ? limitations::dwscFilterDepth : filter_n,
+          convolution._kernel_y,
+          effective_kernel_width,
+          in_channels},
+         weightPrec,
+         {}},
         {{filter_n}, biasPrec, {}},
         {convolution._stride_y, convolution._stride_x},
         {convolution._padding_y, convolution._padding_x},
@@ -821,7 +826,8 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
     // TODO: convolution might be not the first layer in sorted order but connected via split for example - dont know
     // how kaldi will handle that
     if (!dnn->do_rotate_input && inputs->getLayout() != InferenceEngine::Layout::NHWC &&
-        LayerInfo(connectedInputLayer).isInput()) {
+            (LayerInfo(connectedInputLayer).isInput() ||
+        LayerInfo(connectedInputLayer).isPermute())) {
         //  Kaldi features are opposite orientation
         dnn->do_rotate_input = true;
         dnn->num_rotate_rows = in_channels;
@@ -841,14 +847,22 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
     const auto single_kernel_size = in_channels * kernelHW * convolution_precision;
 
     const auto effective_kernel_h_w = convolution._kernel_y * effective_kernel_width;
-    const auto effective_single_kernel_size = in_channels / convolution._group * effective_kernel_h_w * convolution_precision;
+    const auto effective_single_kernel_size =
+        in_channels / convolution._group * effective_kernel_h_w * convolution_precision;
 
     std::vector<uint8_t> transposed_weights;
 
     // Kernel is extended only for 1D case which allows to add 0-s at the end of the kernel.
     const auto kernel_pad =
         ALIGN(effective_single_kernel_size, limitations::convEachKernelByteAlignment) - effective_single_kernel_size;
-    for (uint32_t k = 0; k < convolution._out_depth; k++) {
+    auto number_of_kernels_to_combine = convolution._out_depth;
+
+    if (is_dwsc) {
+        // for DWSC the RO for weights was requested too big so we fix this up a bit
+        number_of_kernels_to_combine /= convolution._group;
+    }
+
+    for (uint32_t k = 0; k < number_of_kernels_to_combine; k++) {
         uint8_t* ptr_filt_current = convolution._weights->cbuffer().as<uint8_t*>() + k * single_kernel_size;
         auto transposed_part = transposeMatrix(ptr_filt_current, convolution_precision, in_channels, kernelHW);
         transposed_weights.insert(transposed_weights.end(), transposed_part.begin(), transposed_part.end());

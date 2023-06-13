@@ -433,11 +433,13 @@ void GNAModelSerial::Export(const GnaAllocations& allocations, std::ostream& os)
 
     auto getTensorWithProperOffset = [&allocationsOrdered](const Gna2Tensor& tensor) {
         Gna2Tensor out = tensor;
-        const auto found = GnaAllocations::GetOffsetForExport(allocationsOrdered, tensor.Data);
-        if (!found.first) {
-            THROW_GNA_EXCEPTION << "Tensor data pointer not found in allocations\n";
+        if (out.Mode != Gna2TensorModeDisabled) {
+            const auto found = GnaAllocations::GetOffsetForExport(allocationsOrdered, tensor.Data);
+            if (!found.first) {
+                THROW_GNA_EXCEPTION << "Tensor data pointer not found in allocations\n";
+            }
+            out.Data = reinterpret_cast<void*>(found.second);
         }
-        out.Data = reinterpret_cast<void*>(found.second);
         return out;
     };
 

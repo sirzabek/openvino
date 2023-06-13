@@ -39,15 +39,12 @@ ov::pass::GRUCellDecomposition::GRUCellDecomposition() {
         auto Xt_W_zrh = std::make_shared<opset4::Split>(Xt_W, axis_1, 3);
         auto R_zrh = std::make_shared<opset4::Split>(R, axis_0, 3);
         auto Ht_R_zrh = std::make_shared<opset4::Split>(Ht_R, axis_1, 3);
-        auto biases_zrh = std::make_shared<opset4::Split>(B, axis_0, gru_cell->get_linear_before_reset() ? 4 : 3);
 
         //  Xt*(Wz^T) + Ht-1*(Rz^T) + Wbz + Rbz
-        auto add_z_1 = std::make_shared<opset4::Add>(Ht_R_zrh->output(0), biases_zrh->output(0));
-        auto add_z_2 = std::make_shared<opset4::Add>(Xt_W_zrh->output(0), add_z_1);
+        auto add_z_2 = std::make_shared<opset4::Add>(Xt_W_zrh->output(0), Ht_R_zrh->output(0));
 
         // Xt*(Wr^T) + Ht-1*(Rr^T) + Wbr + Rbr
-        auto add_r_1 = std::make_shared<opset4::Add>(Ht_R_zrh->output(1), biases_zrh->output(1));
-        auto add_r_2 = std::make_shared<opset4::Add>(Xt_W_zrh->output(1), add_r_1);
+        auto add_r_2 = std::make_shared<opset4::Add>(Xt_W_zrh->output(1), Ht_R_zrh->output(1));
 
         auto clip = gru_cell->get_clip();
         std::shared_ptr<Node> clamp_z = add_z_2;
@@ -66,18 +63,15 @@ ov::pass::GRUCellDecomposition::GRUCellDecomposition() {
         std::shared_ptr<Node> _h;
         if (gru_cell->get_linear_before_reset()) {
             // _h = Xt*(Wh^T) + (rt (.) (Ht-1*(Rh^T) + Rbh)) + Wbh
-            auto Ht_Rh_Rbh = std::make_shared<opset4::Add>(Ht_R_zrh->output(2), biases_zrh->output(3));
-            auto mul_h_1 = std::make_shared<opset4::Multiply>(r_t, Ht_Rh_Rbh);
-            auto add_h_1 = std::make_shared<opset4::Add>(mul_h_1, biases_zrh->output(2));
-            _h = std::make_shared<opset4::Add>(Xt_W_zrh->output(2), add_h_1);
-            ngraph::copy_runtime_info(gru_cell, {Ht_Rh_Rbh, mul_h_1, add_h_1, _h});
+            auto mul_h_1 = std::make_shared<opset4::Multiply>(r_t, Ht_R_zrh->output(2));
+            _h = std::make_shared<opset4::Add>(Xt_W_zrh->output(2), mul_h_1);
+            ngraph::copy_runtime_info(gru_cell, {mul_h_1, _h});
         } else {
             // _h = Xt*(Wh^T) + (rt (.) Ht-1)*(Rh^T) + Rbh + Wbh
             auto rt_Ht = std::make_shared<opset4::Multiply>(r_t, H_t);
             auto mul_h_1 = std::make_shared<opset4::MatMul>(rt_Ht, R_zrh->output(2), false, true);
-            auto add_h_1 = std::make_shared<opset4::Add>(mul_h_1, biases_zrh->output(2));
-            _h = std::make_shared<opset4::Add>(Xt_W_zrh->output(2), add_h_1);
-            ngraph::copy_runtime_info(gru_cell, {rt_Ht, mul_h_1, add_h_1, _h});
+            _h = std::make_shared<opset4::Add>(Xt_W_zrh->output(2), mul_h_1);
+            ngraph::copy_runtime_info(gru_cell, {rt_Ht, mul_h_1, _h});
         }
         // ht = g(_h)
         std::shared_ptr<Node> clamp_h = _h;
@@ -95,24 +89,9 @@ ov::pass::GRUCellDecomposition::GRUCellDecomposition() {
         auto out_H = std::make_shared<opset4::Add>(mul_1, mul_2);
 
         out_H->set_friendly_name(gru_cell->get_friendly_name());
-        ngraph::copy_runtime_info(gru_cell,
-                                  {Xt_W,
-                                   Ht_R,
-                                   axis_0,
-                                   Xt_W_zrh,
-                                   R_zrh,
-                                   Ht_R_zrh,
-                                   biases_zrh,
-                                   add_z_1,
-                                   add_z_2,
-                                   add_r_1,
-                                   add_r_2,
-                                   h_t,
-                                   one,
-                                   sub,
-                                   mul_1,
-                                   mul_2,
-                                   out_H});
+        ngraph::copy_runtime_info(
+            gru_cell,
+            {Xt_W, Ht_R, axis_0, Xt_W_zrh, R_zrh, Ht_R_zrh, add_z_2, add_r_2, h_t, one, sub, mul_1, mul_2, out_H});
         ngraph::replace_node(gru_cell, out_H);
         return true;
     };

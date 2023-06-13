@@ -392,9 +392,7 @@ void GNAPlugin::InitGNADevice() {
                                                       gnaFlags->performance_counting,
                                                       !config.embedded_export_path.empty());
 
-        gnamem = std::make_shared<gna_memory_device>(memory::GNAAllocator(gnadevice),
-                                                     gnadevice->getMemAlignment(),
-                                                     limitations::kMemoryPageSize);
+        gnamem = std::make_shared<gna_memory_device>(memory::GNAAllocator(gnadevice), gnadevice->getMemAlignment());
     }
     graphCompiler.setGNAMemoryPtr(gnamem);
 }

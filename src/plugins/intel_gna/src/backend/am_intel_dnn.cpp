@@ -1407,7 +1407,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
                                    comp.num_rows_in,
                                    comp.op.affine.num_bytes_per_weight,
                                    comp.op.affine.ptr_weights),
-                createGna2BiasTensor1D(comp.num_rows_out, comp.op.affine.num_bytes_per_bias, comp.op.affine.ptr_biases),
+                nullptr,
                 nullptr);
             AdvanceOperationIfAllApplied(component, i, gnaOperation);
             break;
@@ -1478,7 +1478,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
                 createGna2Tensor(comp.tensors[0], comp.ptr_inputs),
                 createGna2Tensor(comp.tensors[1], comp.ptr_outputs),
                 createGna2Tensor(comp.tensors[2], comp.op.conv2D.ptr_filters),
-                createGna2Tensor(comp.tensors[3], comp.op.conv2D.ptr_biases),
+                nullptr,
                 nullptr,
                 create_shape2D_parameter(comp.op.conv2D.convStride[0], comp.op.conv2D.convStride[1]),
                 nullptr,

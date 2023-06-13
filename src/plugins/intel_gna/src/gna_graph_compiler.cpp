@@ -826,8 +826,7 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
     // TODO: convolution might be not the first layer in sorted order but connected via split for example - dont know
     // how kaldi will handle that
     if (!dnn->do_rotate_input && inputs->getLayout() != InferenceEngine::Layout::NHWC &&
-            (LayerInfo(connectedInputLayer).isInput() ||
-        LayerInfo(connectedInputLayer).isPermute())) {
+        (LayerInfo(connectedInputLayer).isInput() || LayerInfo(connectedInputLayer).isPermute())) {
         //  Kaldi features are opposite orientation
         dnn->do_rotate_input = true;
         dnn->num_rotate_rows = in_channels;
@@ -880,8 +879,6 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
                                               ptr_biases,
                                               convolution._biases->cbuffer().as<const void*>(),
                                               convolution._biases->byteSize());
-    } else {
-        gnamem->getQueue(REGION_RO)->push_value(layer, ptr_biases, 0.0f, out_channels);
     }
 }
 
@@ -1463,6 +1460,12 @@ void GNAGraphCompiler::EltwisePrimitive(InferenceEngine::CNNLayerPtr layer) {
     void* ptr_outputs = nullptr;
     void* ptr_weights = nullptr;
     void* ptr_biases = nullptr;
+    auto bias_byte_size = 0;
+
+    if (eltwise._operation != InferenceEngine::EltwiseLayer::Prod) {
+        bias_byte_size = (quantized == nullptr) ? inputs4Bytes->getPrecision().size()
+                                                : gna_config.gnaFlags.input_low_precision ? 1 : 4;
+    }
 
     auto& currentComponent = dnnComponents.addComponent(layer->name, "diagonal");
     dnn->InitAffineComponent(
@@ -1474,7 +1477,7 @@ void GNAGraphCompiler::EltwisePrimitive(InferenceEngine::CNNLayerPtr layer) {
         outputs->getPrecision().size(),
         // TODO: only fp32 and Int16 tested
         quantized == nullptr ? inputs2Bytes->getPrecision().size() : (gna_config.gnaFlags.input_low_precision ? 1 : 2),
-        quantized == nullptr ? inputs4Bytes->getPrecision().size() : (gna_config.gnaFlags.input_low_precision ? 1 : 4),
+        bias_byte_size,
         GetScaleFactor(layer, QuantizedDataType::weights),
         GetScaleFactor(layer, QuantizedDataType::output),
         ptr_inputs,
@@ -1538,15 +1541,6 @@ void GNAGraphCompiler::EltwisePrimitive(InferenceEngine::CNNLayerPtr layer) {
         break;
 
     case EltwiseLayer::Prod:
-        if (quantized == nullptr) {
-            gnamem->getQueue(REGION_RO)->push_value(layer, ptr_biases, 0.0f, num_rows_out + num_padding);
-        } else {
-            if (gna_config.gnaFlags.input_low_precision == false) {
-                gnamem->getQueue(REGION_RO)->push_value<int32_t>(layer, ptr_biases, 0, num_rows_out + num_padding);
-            } else {
-                gnamem->getQueue(REGION_RO)->push_value<int8_t>(layer, ptr_biases, 0, num_rows_out + num_padding);
-            }
-        }
         connectInput(layer, ptr_weights, num_data_bytes_in, 0, biasesLayerIdx);
         break;
 
@@ -1674,21 +1668,24 @@ void GNAGraphCompiler::AffinePrimitive(InferenceEngine::CNNLayerPtr layer, bool 
 
     auto& currentComponent = dnnComponents.addComponent(layer->name, (isDiag ? "diagonal" : "affine"));
 
-    dnn->InitAffineComponent(currentComponent,
-                             num_rows_in + num_padding,
-                             num_columns_in,
-                             num_rows_out + num_padding_out,
-                             inputPrecision.size(),
-                             outputs->getPrecision().size(),
-                             weightable._weights->getTensorDesc().getPrecision().size(),
-                             biasPrecisionSize,
-                             GetScaleFactor(layer, QuantizedDataType::weights),
-                             GetScaleFactor(layer, QuantizedDataType::output),
-                             ptr_inputs,
-                             ptr_outputs,
-                             ptr_weights,
-                             ptr_biases,
-                             isDiag);
+    dnn->InitAffineComponent(
+        currentComponent,
+        num_rows_in + num_padding,
+        num_columns_in,
+        num_rows_out + num_padding_out,
+        inputPrecision.size(),
+        outputs->getPrecision().size(),
+        weightable._weights->getTensorDesc().getPrecision().size(),
+        (weightable.name.find("MatMul") != std::string::npos || weightable.name.find("ScaleShift") != std::string::npos)
+            ? 0
+            : biasPrecisionSize,
+        GetScaleFactor(layer, QuantizedDataType::weights),
+        GetScaleFactor(layer, QuantizedDataType::output),
+        ptr_inputs,
+        ptr_outputs,
+        ptr_weights,
+        ptr_biases,
+        isDiag);
 
     size_t num_data_bytes_out = num_columns_out * (num_rows_out + num_padding_out) * outputs->getPrecision().size();
 
@@ -1782,17 +1779,10 @@ void GNAGraphCompiler::AffinePrimitive(InferenceEngine::CNNLayerPtr layer, bool 
             });
     }
 
-    if (weightable._biases) {
-        gnamem->getQueue(REGION_RO)->push_ptr(layer,
-                                              ptr_biases,
-                                              weightable._biases->cbuffer().as<const void*>(),
-                                              weightable._biases->byteSize());
-    } else {
+    if (!weightable._biases) {
         // in that case input from previous layer goes into biases, so we have to initialize input pointer by zero
         if (useBiasConnection) {
             gnamem->getQueue(REGION_RO)->push_value(layer, ptr_inputs, 0.0f, num_rows_in + num_padding);
-        } else {
-            gnamem->getQueue(REGION_RO)->push_value(layer, ptr_biases, 0.0f, num_rows_out + num_padding_out);
         }
     }
 }

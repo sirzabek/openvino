@@ -90,7 +90,12 @@ Gna2Tensor HelperGna2TensorInit(OvGnaTensor tensor, void* data) {
 Gna2Tensor* createGna2Tensor1D(uint32_t x, uint32_t byteSize, void* data) {
     const auto input = reinterpret_cast<Gna2Tensor*>(gnaUserAllocator(sizeof(Gna2Tensor)));
     IE_ASSERT(input != nullptr);
-    *input = HelperGna2TensorInit1D(x, Gna2DataTypeFromBytes(byteSize), data);
+
+    if (byteSize == 0) {
+        *input = Gna2TensorInitDisabled();
+    } else {
+        *input = HelperGna2TensorInit1D(x, Gna2DataTypeFromBytes(byteSize), data);
+    }
     return input;
 }
 
@@ -160,7 +165,9 @@ void freeGna2Operation(Gna2Operation& operation) {
     if (operation.Operands != nullptr) {
         for (uint32_t i = 0; i < operation.NumberOfOperands; i++) {
             if (operation.Operands[i] != nullptr) {
-                gnaUserFree(const_cast<Gna2Tensor*>(operation.Operands[i]));
+                if (operation.Operands[i]->Mode != Gna2TensorModeDisabled) {
+                    gnaUserFree(const_cast<Gna2Tensor*>(operation.Operands[i]));
+                }
                 operation.Operands[i] = nullptr;
             }
         }

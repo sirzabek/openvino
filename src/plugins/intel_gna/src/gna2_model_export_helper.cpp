@@ -181,6 +181,8 @@ void ExportTlvModel(uint32_t modelId,
                                     GnaEndpoint::GetTotalByteSize(allOutputs),
                                     gnaLibraryVersion.c_str(),
                                     nullptr,
+                                    0,
+                                    nullptr,
                                     0);
 
     if (Gna2TlvStatusSuccess == tlv_status) {

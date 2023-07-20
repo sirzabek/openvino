@@ -97,7 +97,7 @@ def get_configs(args):
         {
             'name': 'DefaultQuantization',
             'params': {
-                'target_device': 'GNA',
+                'target_device': 'GNA3.5',
                 'preset': args.preset,
                 # The custom configuration is for speech recognition models
                 'stat_subset_size': args.subset_size,
@@ -130,7 +130,7 @@ def optimize_model(args):
     engine = SimplifiedEngine(config=engine_config, data_loader=data_loader)
     pipeline = create_pipeline(algorithms, engine)
 
-    model = load_model(model_config, target_device='GNA')
+    model = load_model(model_config, target_device='GNA3.5')
     return pipeline.run(model)
 
 

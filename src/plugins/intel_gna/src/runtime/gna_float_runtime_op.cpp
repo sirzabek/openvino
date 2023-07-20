@@ -121,6 +121,10 @@ void FP::ApplyConvolutional2DTransform(intel_dnn_component_t* component) {
     CNN2DFilter32(component);
 }
 
+void FP::ApplyDWSCTransform(intel_dnn_component_t* component) {
+    DWSCFilter32(component);
+}
+
 void FP::ApplyPiecewiseLinearTransform(intel_dnn_component_t* component,
                                        intel_dnn_number_type_t number_type,
                                        uint32_t listsize) {

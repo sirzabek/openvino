@@ -26,6 +26,21 @@ public:
 };
 
 /**
+ * @brief Substitites ngraph::GroupConvolution (NCHW) -> GNADwsc (NHWC)
+ *
+ *                              Transpose (NCHW -> NHWC)
+ *                                       |
+ * GroupConvolution (NCHW) ->        GNADwsc (NHWC)
+ *                                       |
+ *                              Transpose (NHWC -> NCHW)
+ */
+class SubstituteGNADwsc : public ngraph::pass::MatcherPass {
+public:
+    NGRAPH_RTTI_DECLARATION;
+    SubstituteGNADwsc();
+};
+
+/**
  * @brief Substitites ngraph::MaxPool (NCHW) -> GNAMaxPool (NHWC)
  *
  *                              Transpose (NCHW -> NHWC)
@@ -41,7 +56,7 @@ public:
 };
 
 /**
- * @brief calls SubstituteGNAConvolution and SubstituteGNAMaxPool together
+ * @brief calls SubstituteGNAConvolution, SubstituteGNADwsc and SubstituteGNAMaxPool together
  */
 class ReplaceGnaNHWCLayers : public ngraph::pass::FunctionPass {
 public:

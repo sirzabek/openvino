@@ -9,6 +9,7 @@
 #include "openvino/opsets/opset11.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 
 using namespace ov::opset11;
 using namespace ov::pass;
@@ -25,6 +26,33 @@ inline bool is_skip_operation(const std::shared_ptr<ov::Node>& node) {
            has_n_consumers(node, 1);
 }
 }  // namespace
+
+bool insert_transpose(std::shared_ptr<ov::Node> conv_node) {
+    std::shared_ptr<ov::Node> target_node =
+        get_prev_node_skipping_certain(conv_node->get_input_node_shared_ptr(0), is_skip_operation);
+    std::shared_ptr<Parameter> param_node = std::dynamic_pointer_cast<Parameter>(target_node);
+
+    if (!param_node) {
+        return false;
+    }
+
+    // transpose all convolution inputs
+    for (const auto& conv_input : conv_node->inputs()) {
+        // Transpose H and W (NHWC -> NWHC)
+        ov::AxisVector tr_axis = {0, 2, 1, 3};
+        auto transpose_const = std::make_shared<Constant>(ov::element::i8, ov::Shape{tr_axis.size()}, tr_axis);
+        auto transpose = std::make_shared<Transpose>(conv_input.get_source_output(), transpose_const);
+
+        // Reshape out
+        ov::Shape shape_out = conv_input.get_shape();
+        auto reshape_out_const = std::make_shared<Constant>(ov::element::i32, ov::Shape{shape_out.size()}, shape_out);
+        auto reshape_out = std::make_shared<Reshape>(transpose, reshape_out_const, false);
+
+        conv_input.replace_source_output(reshape_out);
+    }
+
+    return true;
+}
 
 InsertConvolutionTransposeHW::InsertConvolutionTransposeHW() {
     MATCHER_SCOPE(InsertConvolutionTransposeHW);
@@ -53,34 +81,36 @@ InsertConvolutionTransposeHW::InsertConvolutionTransposeHW() {
 
     ov::matcher_pass_callback callback = [=](pattern::Matcher& m) {
         const auto& pattern_map = m.get_pattern_value_map();
-
-        // auto param_node = pattern_map.at(param_pattern).get_node_shared_ptr();
         auto conv_node = pattern_map.at(conv_pattern).get_node_shared_ptr();
 
-        std::shared_ptr<ov::Node> target_node =
-            graph_utils::get_prev_node_skipping_certain(conv_node->get_input_node_shared_ptr(0), is_skip_operation);
-        std::shared_ptr<Parameter> param_node = std::dynamic_pointer_cast<Parameter>(target_node);
+        return insert_transpose(conv_node);
+    };
 
-        if (!param_node) {
-            return false;
-        }
+    auto m = std::make_shared<pattern::Matcher>(conv_pattern, matcher_name);
+    this->register_matcher(m, callback);
+}
 
-        // transpose all convolution inputs
-        for (const auto& conv_input : conv_node->inputs()) {
-            // Transpose H and W (NHWC -> NWHC)
-            ov::AxisVector tr_axis = {0, 2, 1, 3};
-            auto transpose_const = std::make_shared<Constant>(ov::element::i8, ov::Shape{tr_axis.size()}, tr_axis);
-            auto transpose = std::make_shared<Transpose>(conv_input.get_source_output(), transpose_const);
+InsertGroupConvolutionTransposeHW::InsertGroupConvolutionTransposeHW() {
+    MATCHER_SCOPE(InsertGroupConvolutionTransposeHW);
 
-            // Reshape out
-            ov::Shape shape_out = conv_input.get_shape();
-            auto reshape_out_const =
-                std::make_shared<Constant>(ov::element::i32, ov::Shape{shape_out.size()}, shape_out);
-            auto reshape_out = std::make_shared<Reshape>(transpose, reshape_out_const, false);
+    const auto conv_pattern = pattern::wrap_type<op::GNADwsc>(
+        {pattern::any_input(), pattern::any_input()},
+        [](const ov::Output<ov::Node>& node) {
+            std::shared_ptr<op::GNADwsc> conv =
+                std::dynamic_pointer_cast<op::GNADwsc>(node.get_node_shared_ptr());
+            helper::ConvData conv_data;
+            helper::GetConvData(conv, conv_data);
+            return gna_convolution_layer::should_transpose_h_w(static_cast<uint32_t>(conv_data.input_height),
+                                                               static_cast<uint32_t>(conv_data.filter_height),
+                                                               static_cast<uint32_t>(conv_data.input_channel_count),
+                                                               static_cast<uint32_t>(conv_data.filter_stride_height));
+        });
 
-            conv_input.replace_source_output(reshape_out);
-        }
-        return true;
+    ov::matcher_pass_callback callback = [=](pattern::Matcher& m) {
+        const auto& pattern_map = m.get_pattern_value_map();
+        auto conv_node = pattern_map.at(conv_pattern).get_node_shared_ptr();
+
+        return insert_transpose(conv_node);
     };
 
     auto m = std::make_shared<pattern::Matcher>(conv_pattern, matcher_name);

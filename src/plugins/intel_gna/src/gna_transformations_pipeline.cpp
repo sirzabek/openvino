@@ -87,6 +87,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     OV_ITT_SCOPED_TASK(itt::domains::GNAPlugin, "TransformationsPipeline::apply");
 
     fake_quantized = ov::op::util::has_op_with_type<ngraph::op::FakeQuantize>(model);
+    const bool has_group_convolution = ov::op::util::has_op_with_type<ngraph::opset7::GroupConvolution>(model);
     const bool has_convolution = ov::op::util::has_op_with_type<ngraph::opset7::Convolution>(model);
     const bool has_maxpool = ov::op::util::has_op_with_type<ov::opset8::MaxPool>(model);
     const bool has_slice = ov::op::util::has_op_with_type<ov::opset8::Slice>(model);
@@ -137,7 +138,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::SubstituteSoftsign>();
     manager.register_pass<ov::intel_gna::pass::InsertCopyBeforeLayerToBeEliminated>();
     // TODO enable this transformation for networks without convolutions
-    if (has_convolution || has_maxpool || has_mvn || has_matmul) {
+    if (has_convolution || has_group_convolution || has_maxpool || has_mvn || has_matmul) {
         manager.register_pass<ov::intel_gna::pass::ReplaceGnaNHWCLayers>();
         manager.register_pass<ov::intel_gna::pass::InsertConvolutionTransposeHW>();
         manager.register_pass<ov::intel_gna::pass::GatherSinkingTranspose>();

@@ -20,6 +20,7 @@
 #include "legacy/ngraph_ops/fully_connected.hpp"
 #include "openvino/opsets/opset12.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 #include "ops/gna_max_pool.hpp"
 
 namespace ov {
@@ -241,15 +242,15 @@ public:
                            bool is_exception_allowed = false);
 
     /**
-     * @brief Validates if a group convolution is supported by GNA's DWSC operation
-     * @param group_conv group convolution
+     * @brief Validates if a DWSC is supported by GNA's DWSC operation
+     * @param dwsc DWSC
      * @param gna_precision GNA inference precision
      * @param is_exception_allowed flag specifies whether exception is allowed
      * @return true if supported
      */
-    bool is_group_convolution_supported(const std::shared_ptr<ov::opset12::GroupConvolution>& group_conv,
-                                        const InferenceEngine::Precision gna_precision,
-                                        bool is_exception_allowed = false);
+    bool is_dwsc_supported(const std::shared_ptr<ov::intel_gna::op::GNADwsc>& dwsc,
+                           const InferenceEngine::Precision gna_precision,
+                           bool is_exception_allowed = false);
 
     /**
      * @brief Validates if max pooling is supported by GNA

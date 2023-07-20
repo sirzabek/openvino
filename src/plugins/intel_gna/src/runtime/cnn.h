@@ -18,3 +18,4 @@ void CNNMaxPool(intel_dnn_component_t* component,
                 const bool sumPoolingOverRide = false);
 
 void CNN2DFilter32(intel_dnn_component_t* component);
+void DWSCFilter32(intel_dnn_component_t* component);

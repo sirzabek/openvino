@@ -256,6 +256,46 @@ float CNN2DFilter32SingleHWC(const float bias,
     return output;
 }
 
+float DWSCFilter32SingleHWC(const float bias,
+                             const float* filter,
+                             const unsigned KH,
+                             const unsigned KW,
+                             const unsigned KC,
+                             const float* image,
+                             const unsigned IH,
+                             const unsigned IW,
+                             const unsigned IC,
+                             const unsigned oh,
+                             const unsigned ow,
+                             const unsigned oc,
+                             const std::array<uint32_t, 2>& convStride,
+                             const std::array<uint32_t, 2>& zeroPadding) {
+    const auto cSH = convStride[0];
+    const auto cSW = convStride[1];
+
+    const auto zPH = zeroPadding[0];
+    const auto zPW = zeroPadding[1];
+    float output = 0;
+    for (unsigned kh = 0; kh < KH; kh++) {
+        for (unsigned kw = 0; kw < KW; kw++) {
+            if (!matchesPaddedArea(kh, oh, IH, zPH, cSH) && !matchesPaddedArea(kw, ow, IW, zPW, cSW)) {
+                const auto ih = (cSH * oh + kh) - zPH;
+                const auto iw = (cSW * ow + kw) - zPW;
+                const auto ic = oc;
+                const auto kc = oc;
+                const auto imageIndex = getQubeIndex(ih, iw, ic, IW, IC);
+                const auto imageElement = image[imageIndex];
+                const auto filterIndex = getQubeIndex(kh, kw, kc, KW, KC);
+                const auto filterElement = filter[filterIndex];
+                const auto product = imageElement * filterElement;
+                output += product;
+            }
+        }
+    }
+    output += bias;
+    return output;
+}
+
 }  // namespace
 
 void CNN2DFilter32(intel_dnn_component_t* component) {
@@ -292,6 +332,60 @@ void CNN2DFilter32(intel_dnn_component_t* component) {
             for (unsigned oh = 0; oh < OH; oh++) {
                 const auto outputIndex = getQubeIndex(oh, ow, oc, OW, OC);
                 ptr_outputs[outputIndex] = CNN2DFilter32SingleHWC(*(ptr_biases + oc),
+                                                                  ptr_filters + kernelIndex,
+                                                                  kh,
+                                                                  kw,
+                                                                  kc,
+                                                                  ptr_inputs,
+                                                                  IH,
+                                                                  IW,
+                                                                  IC,
+                                                                  oh,
+                                                                  ow,
+                                                                  oc,
+                                                                  component->op.conv2D.convStride,
+                                                                  component->op.conv2D.zeroPadding);
+            }
+        }
+        // kernel padded to 16B = 4 * sizeof(float)
+        kernelIndex += ALIGN(kh * kw * kc, Limitations::kConvEachKernelByteAlignment / sizeof(float));
+    }
+}
+
+void DWSCFilter32(intel_dnn_component_t* component) {
+    float* ptr_filters = reinterpret_cast<float*>(component->op.conv2D.ptr_filters);
+    float* ptr_biases = reinterpret_cast<float*>(component->op.conv2D.ptr_biases);
+    float* ptr_inputs = reinterpret_cast<float*>(component->ptr_inputs);
+    float* ptr_outputs = reinterpret_cast<float*>(component->ptr_outputs);
+
+    std::string layer_name;
+    layer_name = " In layer '" + std::string(component->original_layer_name) + "'";
+
+    const auto IH = component->tensors[0].dimensions[1];  // NHWC
+    const auto IW = component->tensors[0].dimensions[2];  // NHWC
+    const auto IC = component->tensors[0].dimensions[3];  // NHWC
+
+    const auto OH = component->tensors[1].dimensions[1];  // NHWC
+    const auto OW = component->tensors[1].dimensions[2];  // NHWC
+    const auto OC = component->tensors[1].dimensions[3];  // NHWC
+
+    const auto kn = component->tensors[2].dimensions[0];  // NHWC
+    const auto kh = component->tensors[2].dimensions[1];  // NHWC
+    const auto kw = component->tensors[2].dimensions[2];  // NHWC
+    const auto kc = component->tensors[2].dimensions[3];  // NHWC
+
+    if (kn != OC) {
+        THROW_GNA_EXCEPTION << "Number of filters should be equal to output depth!" << layer_name;
+    }
+    if (kc != IC) {
+        THROW_GNA_EXCEPTION << "Depth of filter should be equal to input depth!" << layer_name;
+    }
+    auto kernelIndex = 0;
+    for (unsigned oc = 0; oc < OC; oc++) {
+        for (unsigned ow = 0; ow < OW; ow++) {
+            for (unsigned oh = 0; oh < OH; oh++) {
+                const auto outputIndex = getQubeIndex(oh, ow, oc, OW, OC);
+                ptr_outputs[outputIndex] = DWSCFilter32SingleHWC(*(ptr_biases + oc),
                                                                   ptr_filters + kernelIndex,
                                                                   kh,
                                                                   kw,

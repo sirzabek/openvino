@@ -12,6 +12,7 @@
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 #include "ops/gna_max_pool.hpp"
 #include "transformations/utils/transformation_helper.hpp"
 #include "transformations/utils/utils.hpp"
@@ -24,6 +25,7 @@ using namespace ov::intel_gna::pass::helper;
 
 NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::ReplaceGnaNHWCLayers, "ReplaceGnaNHWCLayers");
 NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNAConvolution, "SubstituteGNAConvolution");
+NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNADwsc, "SubstituteGNADwsc");
 NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNAMaxPool, "SubstituteGNAMaxPool");
 
 namespace {
@@ -73,35 +75,46 @@ ov::Shape make_transpose_order_nhwc2nchw(size_t shape_size) {
 
 namespace SubstituteGNAConvolutionNS {
 
+template <typename From, typename To>
 bool do_transformation(std::shared_ptr<ov::Node> convolution);
 
+template<typename From, typename To>
 bool do_transformation(std::shared_ptr<ov::Node> convolution) {
-    auto convolution_node = std::dynamic_pointer_cast<Convolution>(convolution);
+    auto convolution_node = std::dynamic_pointer_cast<From>(convolution);
     auto convolution_input_data_node = convolution_node->input_value(0);
     auto convolution_filters_node = convolution_node->input_value(1);
-    const ov::Shape convolution_input_shape = convolution_node->get_input_shape(0);
+    const auto convolution_input_shape_size = convolution_node->get_input_shape(0).size();
+    const auto convolution_filters_shape_size = convolution_node->get_input_shape(1).size();
 
-    if (convolution_input_shape.size() != 3 && convolution_input_shape.size() != 4) {
-        std::cout << "ReplaceGnaNHWCLayers: unsupported convolution size " << convolution_input_shape.size()
+    if (convolution_input_shape_size != 3 && convolution_input_shape_size != 4) {
+        std::cout << "ReplaceGnaNHWCLayers: unsupported convolution shape size " << convolution_input_shape_size
                   << std::endl;
         return false;
     }
 
-    const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(convolution_input_shape.size());
+    const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(convolution_input_shape_size);
 
     auto transpose_const =
         Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
+    auto transpose_const_filters = transpose_const;
+
+    // Check if we're dealing with GroupConvolution
+    if (convolution_filters_shape_size > convolution_input_shape_size) {
+        const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(convolution_filters_shape_size);
+        transpose_const_filters =
+            Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
+    }
 
     auto transpose_before = std::make_shared<Transpose>(convolution_input_data_node, transpose_const);
 
-    auto transpose_conv_constant = std::make_shared<Transpose>(convolution_filters_node, transpose_const);
-    auto conv_new = std::make_shared<ov::intel_gna::op::GNAConvolution>(transpose_before,
-                                                                        transpose_conv_constant,
-                                                                        convolution_node->get_strides(),
-                                                                        convolution_node->get_pads_begin(),
-                                                                        convolution_node->get_pads_end(),
-                                                                        convolution_node->get_dilations(),
-                                                                        convolution_node->get_auto_pad());
+    auto transpose_conv_constant = std::make_shared<Transpose>(convolution_filters_node, transpose_const_filters);
+    auto conv_new = std::make_shared<To>(transpose_before,
+                                         transpose_conv_constant,
+                                         convolution_node->get_strides(),
+                                         convolution_node->get_pads_begin(),
+                                         convolution_node->get_pads_end(),
+                                         convolution_node->get_dilations(),
+                                         convolution_node->get_auto_pad());
 
     const ov::Shape transpose_after_order = make_transpose_order_nhwc2nchw(conv_new->get_output_shape(0).size());
 
@@ -171,7 +184,27 @@ ov::intel_gna::pass::SubstituteGNAConvolution::SubstituteGNAConvolution() {
             return false;
         }
 
-        return SubstituteGNAConvolutionNS::do_transformation(convolution_node);
+        return SubstituteGNAConvolutionNS::do_transformation<Convolution, ov::intel_gna::op::GNAConvolution>(
+            convolution_node);
+    };
+
+    auto m = std::make_shared<Matcher>(convolution, matcher_name);
+    this->register_matcher(m, callback);
+}
+
+ov::intel_gna::pass::SubstituteGNADwsc::SubstituteGNADwsc() {
+    MATCHER_SCOPE(SubstituteGNADwsc);
+
+    auto convolution = wrap_type<GroupConvolution>();
+
+    matcher_pass_callback callback = [=](Matcher& m) {
+        auto convolution_node = std::dynamic_pointer_cast<GroupConvolution>(m.get_match_root());
+        if (!convolution_node) {
+            return false;
+        }
+
+        return SubstituteGNAConvolutionNS::do_transformation<GroupConvolution, ov::intel_gna::op::GNADwsc>(
+            convolution_node);
     };
 
     auto m = std::make_shared<Matcher>(convolution, matcher_name);
@@ -201,6 +234,7 @@ bool ov::intel_gna::pass::ReplaceGnaNHWCLayers::run_on_model(const std::shared_p
 
     ov::pass::Manager manager(get_pass_config());
     manager.register_pass<ov::intel_gna::pass::SubstituteGNAConvolution>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteGNADwsc>();
     manager.register_pass<ov::intel_gna::pass::SubstituteGNAMaxPool>();
     manager.run_passes(function);
 

@@ -9,6 +9,7 @@
 
 #include "openvino/opsets/opset12.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 
 namespace ov {
 namespace intel_gna {
@@ -52,7 +53,7 @@ void GetConvData(std::shared_ptr<ngraph::opset7::Convolution> conv, ConvData& co
  * @param conv_data group convolution data structure to put data into
  * @return void
  */
-void GetConvData(std::shared_ptr<ngraph::opset7::GroupConvolution> conv, ConvData& conv_data);
+void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data);
 
 /**
  * @brief gets all convolution related data into a struct for further processing

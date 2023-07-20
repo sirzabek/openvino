@@ -28,6 +28,7 @@ public:
     static void ApplyRecurrentTransform(intel_dnn_component_t* component, uint32_t row, void* ptr_feedbacks);
     static void ApplyConvolutional1DTransform(intel_dnn_component_t* component);
     static void ApplyConvolutional2DTransform(intel_dnn_component_t* component);
+    static void ApplyDWSCTransform(intel_dnn_component_t* component);
     static void ApplyPiecewiseLinearTransform(intel_dnn_component_t* component,
                                               intel_dnn_number_type_t number_type,
                                               uint32_t listsize);

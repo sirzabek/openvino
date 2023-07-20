@@ -950,31 +950,31 @@ bool Limitations::is_conv_supported(const std::shared_ptr<ov::intel_gna::op::GNA
                           conv_gna->get_dilations()[conv_gna->get_dilations().size() - 1]);
 }
 
-bool Limitations::is_group_convolution_supported(const std::shared_ptr<GroupConvolution>& group_conv,
-                                                 const InferenceEngine::Precision gna_precision,
-                                                 bool is_exception_allowed) {
-    OPENVINO_ASSERT(group_conv, "GroupConvolution node is empty!");
-    size_t batch_size = group_conv->input_value(0).get_shape()[0];
+bool Limitations::is_dwsc_supported(const std::shared_ptr<ov::intel_gna::op::GNADwsc>& dwsc,
+                                    const InferenceEngine::Precision gna_precision,
+                                    bool is_exception_allowed) {
+    OPENVINO_ASSERT(dwsc, "GroupConvolution node is empty!");
+    size_t batch_size = dwsc->input_value(0).get_shape()[0];
     if (batch_size != 1) {
         if (is_exception_allowed) {
-            THROW_GNA_EXCEPTION << "topology with layer: " + group_conv->get_friendly_name() +
-                                       ", type: " + group_conv->get_type_name() + ", and batch size(" +
+            THROW_GNA_EXCEPTION << "topology with layer: " + dwsc->get_friendly_name() +
+                                       ", type: " + dwsc->get_type_name() + ", and batch size(" +
                                        std::to_string(batch_size) + ") != 1 not supported";
         }
         return false;
     }
 
     pass::helper::ConvData conv_data;
-    pass::helper::GetConvData(group_conv, conv_data);
+    pass::helper::GetConvData(dwsc, conv_data);
 
     if (m_cnn_validator) {
-        return m_cnn_validator->ValidateDwsc(group_conv->get_friendly_name(),
+        return m_cnn_validator->ValidateDwsc(dwsc->get_friendly_name(),
                                              conv_data.input_height,
                                              conv_data.input_width,
                                              conv_data.input_channel_count,
                                              conv_data.filter_height,
                                              conv_data.filter_width,
-                                             conv_data.filter_channel_count,
+                                             conv_data.filter_count,
                                              conv_data.filter_stride_height,
                                              conv_data.filter_stride_width,
                                              conv_data.filter_dilation_height,
@@ -1175,8 +1175,8 @@ bool Limitations::is_op_supported(const std::shared_ptr<ov::Node>& node,
         return SupportedElementTypes::IsConstantTypeSupported(node->get_element_type(), is_exception_allowed);
     } else if (auto conv = std::dynamic_pointer_cast<ov::intel_gna::op::GNAConvolution>(node)) {
         return is_conv_supported(conv, gna_precision, is_exception_allowed);
-    } else if (auto group_conv = std::dynamic_pointer_cast<GroupConvolution>(node)) {
-        return is_group_convolution_supported(group_conv, gna_precision, is_exception_allowed);
+    } else if (auto dwsc = std::dynamic_pointer_cast<ov::intel_gna::op::GNADwsc>(node)) {
+        return is_dwsc_supported(dwsc, gna_precision, is_exception_allowed);
     } else if (auto fully_connected = std::dynamic_pointer_cast<ngraph::op::FullyConnected>(node)) {
         return is_fc_supported(fully_connected, is_exception_allowed);
     } else if (ov::intel_gna::graph_utils::is_pooling(node)) {

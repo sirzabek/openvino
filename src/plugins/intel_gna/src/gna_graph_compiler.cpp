@@ -354,7 +354,7 @@ PropertyVector<T> property_vector_append(PropertyVector<T> properties, T value) 
 }  // namespace
 
 /**
- * Create AMIntelDNN Convolutional1DComponent from ConvolutionLayer
+ * Create AMIntelDNN Convolutional1DComponent or Convolutional2DComponent from ConvolutionLayer
  *
  * GNA Convolution input is NHCW and output is transposed to NHWC
  *
@@ -389,7 +389,7 @@ void GNAGraphCompiler::ConvolutionPrimitive(InferenceEngine::CNNLayerPtr layer) 
     const auto is_dwsc = (convolution._group > 1);
 
     if (inputs->getLayout() == InferenceEngine::Layout::CHW) {
-        // convolution is ngraph-3D here. Make some fixes to work with it as it's ngraph-4D
+        // Convolution is ngraph-3D here. Make some adjustments to work with it as with ngraph-4D one.
         convolution._kernel_y = 1;
         convolution._dilation_y = 1;
         convolution._stride_y = 1;

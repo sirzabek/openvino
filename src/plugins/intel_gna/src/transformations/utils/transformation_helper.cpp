@@ -10,6 +10,7 @@
 #include "openvino/opsets/opset12.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 #include "ops/gna_max_pool.hpp"
 #include "transformations/rt_info/transpose_sinking_attr.hpp"
 
@@ -45,7 +46,7 @@ void GetConvData(std::shared_ptr<ngraph::opset7::Convolution> conv, ConvData& co
     conv_data.element_type = conv->get_element_type();
 }
 
-void GetConvData(std::shared_ptr<GroupConvolution> conv, ConvData& conv_data) {
+void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data) {
     OPENVINO_ASSERT(conv);
     conv_data.output_height = conv->get_output_shape(0)[2];
     conv_data.output_width = conv->get_output_shape(0)[3];

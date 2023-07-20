@@ -66,13 +66,17 @@ void FP::infer() {
             ApplyConvolutional2DTransform(comp);
             break;
         }
+        case kDnnDWSCOp: {
+            ApplyConvolutional2DTransform(comp);
+            break;
+        }
         case kDnnPiecewiselinearOp: {
             ApplyPiecewiseLinearTransform(comp, kDnnFloat, num_active_outputs);
             break;
         }
         case kDnnMaxPoolOp: {
             bool is_fused_with_convolution_2d = false;
-            if (i > 0 && dnn->component[i - 1].operation == kDnnConvolutional2dOp) {
+            if (i > 0 && (dnn->component[i - 1].operation == kDnnConvolutional2dOp || dnn->component[i - 1].operation == kDnnDWSCOp)) {
                 is_fused_with_convolution_2d = true;
             }
 

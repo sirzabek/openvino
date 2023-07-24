@@ -160,6 +160,15 @@ void ExportTlvModel(uint32_t modelId,
         Gna2ModelExport(exportConfig, Gna2ModelExportComponentOutputDump, &bufferOutputRWData, &sizeOfOutputRWData);
     GNADeviceHelper::checkGna2Status(status, "Gna2ModelExport(Gna2ModelExportComponentOutputDump)");
 
+    // Performance estimates data
+    void* bufferPerfEstimatesData = nullptr;
+    uint32_t sizeOfPerfEstimatesData;
+    status = Gna2ModelExport(exportConfig,
+                             Gna2ModelExportComponentPerformanceEstimates,
+                             &bufferPerfEstimatesData,
+                             &sizeOfPerfEstimatesData);
+    GNADeviceHelper::checkGna2Status(status, "Gna2ModelExport(Gna2ModelExportComponentPerformanceEstimates)");
+
     char* outTlv = nullptr;
 
     const auto gnaLibraryVersion = GNADeviceHelper::GetGnaLibraryVersion();
@@ -182,8 +191,8 @@ void ExportTlvModel(uint32_t modelId,
                                     gnaLibraryVersion.c_str(),
                                     nullptr,
                                     0,
-                                    nullptr,
-                                    0);
+                                    (const char*)bufferPerfEstimatesData,
+                                    sizeOfPerfEstimatesData);
 
     if (Gna2TlvStatusSuccess == tlv_status) {
         outStream.write(outTlv, outTlvSize);
@@ -201,14 +210,13 @@ void ExportTlvModel(uint32_t modelId,
     }
 
     gnaUserFree(outTlv);
-
     gnaUserFree(bufferLayerDescriptors);
     gnaUserFree(bufferROData);
     gnaUserFree(bufferScratchRWData);
     gnaUserFree(bufferStateRWData);
-
     gnaUserFree(bufferInputRWData);
     gnaUserFree(bufferOutputRWData);
+    gnaUserFree(bufferPerfEstimatesData);
 
     status = Gna2ModelExportConfigRelease(exportConfig);
     GNADeviceHelper::checkGna2Status(status, "Gna2ModelExportConfigRelease");

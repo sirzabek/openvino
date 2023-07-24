@@ -38,8 +38,15 @@ def serialize_constants(graph: Graph, bin_file_name: str, data_type=np.float32):
 
     """
     bin_hashes = {}
-    with open(bin_file_name, 'wb') as bin_file:
-        serialize_constants_recursively(graph, bin_file, data_type, bin_hashes)
+    if os.path.exists(bin_file_name):
+        shutil.copy(bin_file_name, bin_file_name.replace(".bin", "_test.bin"))
+        test = bin_file_name.replace(".bin", "_test.bin")
+        with open(test, 'wb') as bin_file:
+            serialize_constants_recursively(graph, bin_file, data_type, bin_hashes)
+        bin_file_name = test
+    else:
+        with open(bin_file_name, 'wb') as bin_file:
+            serialize_constants_recursively(graph, bin_file, data_type, bin_hashes)
 
 
 def update_offset_size_in_const_node(node: Node):

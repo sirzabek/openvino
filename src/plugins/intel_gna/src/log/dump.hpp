@@ -20,6 +20,7 @@ void WriteInputAndOutputTextGNAImpl(const Gna2Model& gnaModel,
                                     const std::string refFolderName);
 
 void DumpGna2Model(const Gna2Model& gnaModel,
+                   const target::DeviceVersion& target,
                    const std::string& dumpFolderNameGNA,
                    bool dumpData,
                    const GnaAllocations& allAllocations,

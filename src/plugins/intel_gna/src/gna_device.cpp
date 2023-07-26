@@ -213,7 +213,7 @@ uint32_t GNADeviceHelper::createModel(Gna2Model& gnaModel) const {
         const std::string mode = useDeviceEmbeddedExport ? "_ee" : "";
         const auto fileSuffix =
             mode + "_devVersion_" + toHexString(DeviceToString(target->get_detected_device_version()));
-        dump::DumpGna2Model(gnaModel, path, false, allAllocations, fileSuffix);
+        dump::DumpGna2Model(gnaModel, target->get_effective_execution_target(), path, false, allAllocations, fileSuffix);
     }
 
     const auto status = Gna2ModelCreate(nGnaDeviceIndex, &gnaModel, &modelId);

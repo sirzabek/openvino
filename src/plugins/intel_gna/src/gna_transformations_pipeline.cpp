@@ -113,6 +113,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::HandleTransposesAroundMatMul>();
     manager.register_pass<ov::intel_gna::pass::ReplaceTransposeBeforeMatMul>();
     manager.register_pass<ov::intel_gna::pass::InsertTransposeAfterConvOrPool>();
+    manager.register_pass<ov::intel_gna::pass::InsertPreprocessingTranspose>();
     manager.register_pass<ov::intel_gna::pass::Unfuse2dto4dReshapeAndTranspose>();
     manager.register_pass<ov::intel_gna::pass::Unfuse4dto2dReshapeAndTranspose>();
     manager.register_pass<ov::intel_gna::pass::RemoveExtraReshapes>();

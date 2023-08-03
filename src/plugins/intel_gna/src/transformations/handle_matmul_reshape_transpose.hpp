@@ -34,6 +34,12 @@ public:
     InsertTransposeBeforeMultiply();
 };
 
+class InsertPreprocessingTranspose : public ngraph::pass::MatcherPass {
+public:
+    OPENVINO_RTTI("InsertPreprocessingTranspose", "0");
+    InsertPreprocessingTranspose();
+};
+
 }  // namespace pass
 }  // namespace intel_gna
 }  // namespace ov

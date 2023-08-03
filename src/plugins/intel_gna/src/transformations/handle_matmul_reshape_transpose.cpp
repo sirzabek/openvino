@@ -147,9 +147,6 @@ InsertTransposeBeforeMultiply::InsertTransposeBeforeMultiply() {
     auto transpose = wrap_type<Transpose>({reshape0, any_input()});
     auto reshape1 = wrap_type<Reshape>({transpose, constant_pattern});
     auto sigmoid = wrap_type<Sigmoid>({reshape1});
-    //auto fq1 = wrap_type<FakeQuantize>({sigmoid, any_input(), any_input(), any_input(), any_input()});
-    //auto reshape2 = wrap_type<Reshape>({fq1, constant_pattern});
-    //auto multiply = wrap_type<Multiply>({any_input(), reshape2});
 
     matcher_pass_callback callback = [=](Matcher& m) {
         const auto& pattern_map = m.get_pattern_value_map();
@@ -163,6 +160,41 @@ InsertTransposeBeforeMultiply::InsertTransposeBeforeMultiply() {
     };
 
     auto m = std::make_shared<Matcher>(sigmoid, matcher_name);
+    this->register_matcher(m, callback);
+}
+
+InsertPreprocessingTranspose::InsertPreprocessingTranspose() {
+    MATCHER_SCOPE(InsertPreprocessingTranspose);
+
+    auto constant_pattern = wrap_type<Constant>();
+    auto reshape0 = wrap_type<Reshape>({any_input(), constant_pattern});
+    auto reshape1 = wrap_type<Reshape>({reshape0, constant_pattern});
+    auto transpose = wrap_type<Transpose>({reshape1, any_input()});
+    auto reshape2 = wrap_type<Reshape>({transpose, constant_pattern});
+    auto convolution = wrap_type<Convolution>({reshape2, any_input()});
+
+    matcher_pass_callback callback = [=](Matcher& m) {
+        const auto& pattern_map = m.get_pattern_value_map();
+
+        // Add reshape and transpose
+        auto reshape0_node = pattern_map.at(reshape0).get_node_shared_ptr();
+        auto reshape1_node = pattern_map.at(reshape1).get_node_shared_ptr();
+        auto transpose_node = pattern_map.at(transpose).get_node_shared_ptr();
+        auto reshape2_node = pattern_map.at(reshape2).get_node_shared_ptr();
+        int32_t c_size = reshape2_node->get_output_shape(0).at(1);
+        int32_t hw_size = reshape2_node->get_output_shape(0).at(2);
+        std::vector<int32_t> reshape_pattern{-1, c_size, hw_size};
+        auto reshape_const =
+            std::make_shared<Constant>(ov::element::i32, ov::Shape{reshape_pattern.size()}, reshape_pattern);
+        auto reshape_node_new = std::make_shared<Reshape>(reshape0_node, reshape_const, false);
+        auto order = make_constant(ov::Shape{0, 2, 1});
+        auto transpose_node_new = std::make_shared<Transpose>(reshape_node_new, order);
+        reshape1_node->input(0).replace_source_output(transpose_node_new->output(0));
+
+        return true;
+    };
+
+    auto m = std::make_shared<Matcher>(convolution, matcher_name);
     this->register_matcher(m, callback);
 }
 

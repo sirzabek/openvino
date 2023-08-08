@@ -87,12 +87,12 @@ public:
                        const uint32_t kH,
                        const uint32_t kW,
                        const uint32_t kN,
+                       const uint32_t kG,
                        const uint32_t strideH,
                        const uint32_t strideW,
                        const uint32_t dilH,
                        const uint32_t dilW,
-                       OvGnaType inPrecision,
-                       bool dwsc) const;
+                       OvGnaType inPrecision) const;
 
     void ValidatePooling2D(const std::string& name,
                            const uint32_t windowH,

@@ -243,14 +243,14 @@ void GNAGraphCompiler::ValidateCnn2D(const std::string& name,
                                      const uint32_t kH,
                                      const uint32_t kW,
                                      const uint32_t kN,
+                                     const uint32_t kG,
                                      const uint32_t strideH,
                                      const uint32_t strideW,
                                      const uint32_t dilH,
                                      const uint32_t dilW,
-                                     OvGnaType inPrecision,
-                                     bool is_dwsc) const {
+                                     OvGnaType inPrecision) const {
     if (m_cnn2d_validator) {
-        if (!is_dwsc) {
+        if (kG == 1) {
             if (m_cnn2d_validator->ValidateCnn1D(name,
                                                  inHeight,
                                                  inWidth,
@@ -285,7 +285,8 @@ void GNAGraphCompiler::ValidateCnn2D(const std::string& name,
                                             inChannels,
                                             kH,
                                             kW,
-                                            kN,
+                                            kN / kG,
+                                            kG,
                                             strideH,
                                             strideW,
                                             dilH,
@@ -766,12 +767,12 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
                   convolution._kernel_y,
                   effective_kernel_width,
                   filter_n,
+                  convolution._group,
                   convolution._stride_y,
                   convolution._stride_x,
                   convolution._dilation_y,
                   convolution._dilation_x,
-                  inputPrec,
-                  is_dwsc);
+                  inputPrec);
 
     float weight_scale_factor = GetScaleFactor(layer, QuantizedDataType::weights);
     float output_scale_factor = GetScaleFactor(layer, QuantizedDataType::output);

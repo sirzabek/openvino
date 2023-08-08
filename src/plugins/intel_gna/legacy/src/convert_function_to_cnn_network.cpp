@@ -20,6 +20,7 @@
 #include "cpp/ie_cnn_network.h"
 #include "exec_graph_info.hpp"
 #include "gna_convolution.hpp"
+#include "gna_dwsc.hpp"
 #include "gna_max_pool.hpp"
 #include "ie_legacy_itt.hpp"
 #include "legacy/graph_tools.hpp"
@@ -1679,7 +1680,7 @@ CNNLayerCreator::CNNLayerCreator() {
                            return res;
                        });
 
-    addSpecificCreator({"ConvolutionIE", "GNAConvolution"},
+    addSpecificCreator({"ConvolutionIE", "GNAConvolution", "GNADwsc"},
                        [](const std::shared_ptr<::ngraph::Node>& node,
                           const std::map<std::string, std::string>& params) -> CNNLayerPtr {
                            LayerParams attrs = {node->get_friendly_name(),
@@ -1697,6 +1698,12 @@ CNNLayerCreator::CNNLayerCreator() {
                            if (node->description() == "GNAConvolution") {
                                // NHWC
                                shape.erase(shape.begin());
+                               shape.erase(shape.end() - 1);
+                               res->params["output"] = Builder::asString(*(node->get_shape().rbegin()));
+                           } else if (node->description() == "GNADwsc") {
+                               // GNHWC
+                               res->params["group"] = Builder::asString(*(shape.begin()));
+                               shape.erase(shape.begin(), shape.begin() + 2);
                                shape.erase(shape.end() - 1);
                                res->params["output"] = Builder::asString(*(node->get_shape().rbegin()));
                            } else {
@@ -2040,6 +2047,7 @@ void convertFunctionToICNNNetwork(const std::shared_ptr<const ::ngraph::Function
         if (((::ngraph::as_type_ptr<::ngraph::op::ConvolutionIE>(consumerLayer) ||
               ::ngraph::as_type_ptr<::ngraph::op::FullyConnected>(consumerLayer) ||
               ::ngraph::as_type_ptr<ov::intel_gna::op::GNAConvolution>(consumerLayer) ||
+              ::ngraph::as_type_ptr<ov::intel_gna::op::GNADwsc>(consumerLayer) ||
               ::ngraph::as_type_ptr<ov::intel_gna::op::GNAMaxPool>(consumerLayer)) &&
              !keep_constants) ||
             ::ngraph::as_type_ptr<::ngraph::op::v1::BinaryConvolution>(consumerLayer) ||

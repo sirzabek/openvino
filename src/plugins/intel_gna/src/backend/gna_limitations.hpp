@@ -131,6 +131,7 @@ public:
                               const uint32_t kH,
                               const uint32_t kW,
                               const uint32_t kN,
+                              const uint32_t kG,
                               const uint32_t strideH,
                               const uint32_t strideW,
                               const uint32_t dilationH,

@@ -240,9 +240,9 @@ void GNAGraphCompiler::ValidateCnn2D(const std::string& name,
                                      const uint32_t inHeight,
                                      const uint32_t inWidth,
                                      const uint32_t inChannels,
+                                     const uint32_t kN,
                                      const uint32_t kH,
                                      const uint32_t kW,
-                                     const uint32_t kN,
                                      const uint32_t kG,
                                      const uint32_t strideH,
                                      const uint32_t strideW,
@@ -270,9 +270,9 @@ void GNAGraphCompiler::ValidateCnn2D(const std::string& name,
                                              inHeight,
                                              inWidth,
                                              inChannels,
+                                             kN,
                                              kH,
                                              kW,
-                                             kN,
                                              strideH,
                                              strideW,
                                              dilH,
@@ -283,9 +283,9 @@ void GNAGraphCompiler::ValidateCnn2D(const std::string& name,
                                             inHeight,
                                             inWidth,
                                             inChannels,
+                                            kN,
                                             kH,
                                             kW,
-                                            kN / kG,
                                             kG,
                                             strideH,
                                             strideW,
@@ -735,8 +735,6 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
 
     uint32_t num_input_padding = ALIGN(num_inputs, Limitations::kNoOfInputsDivisor) - num_inputs;
 
-    const uint32_t filter_n = convolution._out_depth;
-
     // if kernel padding to multiple of 8 will cause missed outputs, need to pad further
     if (num_input_padding == 0) {
         log::debug() << LAYER_NAME(&convolution) << "Inputs are aligned \n";
@@ -759,14 +757,15 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
     const auto biasPrec = OvGnaTypeIntFromBytes(biasPrecision.size());
 
     const auto is_dwsc = (convolution._group > 1);
+    const uint32_t filter_n = is_dwsc ? Limitations::kDWSCFilterDepth : convolution._out_depth;
 
     ValidateCnn2D(layer->name,
                   in_height,
                   effective_input_width,
                   in_channels,
+                  filter_n,
                   convolution._kernel_y,
                   effective_kernel_width,
-                  filter_n,
                   convolution._group,
                   convolution._stride_y,
                   convolution._stride_x,
@@ -783,13 +782,8 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
         currentComponent,
         {{in_batch, in_height, effective_input_width, in_channels}, inputPrec, {}},  // NHWC for GNA
         {{out_batch, out_height, out_width, out_channels}, outputPrec, {}},
-        {{is_dwsc ? Limitations::kDWSCFilterDepth : filter_n,
-          convolution._kernel_y,
-          effective_kernel_width,
-          in_channels},
-         weightPrec,
-         {}},
-        {{filter_n}, biasPrec, {}},
+        {{filter_n, convolution._kernel_y, effective_kernel_width, in_channels}, weightPrec, {}},
+        {{convolution._out_depth}, biasPrec, {}},
         {convolution._stride_y, convolution._stride_x},
         {convolution._padding_y, convolution._padding_x},
         weight_scale_factor,

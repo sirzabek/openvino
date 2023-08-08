@@ -1701,9 +1701,9 @@ CNNLayerCreator::CNNLayerCreator() {
                                shape.erase(shape.end() - 1);
                                res->params["output"] = Builder::asString(*(node->get_shape().rbegin()));
                            } else if (node->description() == "GNADwsc") {
-                               // GNHWC
-                               res->params["group"] = Builder::asString(*(shape.begin()));
-                               shape.erase(shape.begin(), shape.begin() + 2);
+                               // NHWC
+                               res->params["group"] = Builder::asString(*(shape.rbegin()));
+                               shape.erase(shape.begin());
                                shape.erase(shape.end() - 1);
                                res->params["output"] = Builder::asString(*(node->get_shape().rbegin()));
                            } else {

@@ -285,7 +285,7 @@ float DWSCFilter32SingleHWC(const float bias,
                 const auto kc = oc;
                 const auto imageIndex = getQubeIndex(ih, iw, ic, IW, IC);
                 const auto imageElement = image[imageIndex];
-                const auto filterIndex = getQubeIndex(kh, kw, kc, KW, KC);
+                const auto filterIndex = getQubeIndex(kh, kw, kc, KH, KC);
                 const auto filterElement = filter[filterIndex];
                 const auto product = imageElement * filterElement;
                 output += product;
@@ -369,16 +369,18 @@ void DWSCFilter32(intel_dnn_component_t* component) {
     const auto OW = component->tensors[1].dimensions[2];  // NHWC
     const auto OC = component->tensors[1].dimensions[3];  // NHWC
 
-    const auto kn = component->tensors[2].dimensions[0];  // NHWC
-    const auto kh = component->tensors[2].dimensions[1];  // NHWC
-    const auto kw = component->tensors[2].dimensions[2];  // NHWC
-    const auto kc = component->tensors[2].dimensions[3];  // NHWC
+    const auto kn = component->tensors[2].dimensions[0];  // GNHWC
+    const auto kh = component->tensors[2].dimensions[1];  // GNHWC
+    const auto kw = component->tensors[2].dimensions[2];  // GNHWC
+    const auto kc = component->tensors[2].dimensions[3];  // GNHWC
 
-    if (kn != OC) {
-        THROW_GNA_EXCEPTION << "Number of filters should be equal to output depth!" << layer_name;
+    // The comments in DWSC case are a bit swapped related to variable names
+    // to allow using generic intel_dnn structures/code
+    if (kn != 1) {
+        THROW_GNA_EXCEPTION << "Depth of filter should be equal to 1!" << layer_name;
     }
     if (kc != IC) {
-        THROW_GNA_EXCEPTION << "Depth of filter should be equal to input depth!" << layer_name;
+        THROW_GNA_EXCEPTION << "Number of filters should be equal to input depth!" << layer_name;
     }
     auto kernelIndex = 0;
     for (unsigned oc = 0; oc < OC; oc++) {
@@ -402,7 +404,8 @@ void DWSCFilter32(intel_dnn_component_t* component) {
             }
         }
         // kernel padded to 16B = 4 * sizeof(float)
-        kernelIndex += ALIGN(kh * kw * kc, Limitations::kConvEachKernelByteAlignment / sizeof(float));
+        //kernelIndex += ALIGN(kh * kw * kn, Limitations::kConvEachKernelByteAlignment / sizeof(float));
+        //kernelIndex += kh * kw * kn;
     }
 }
 

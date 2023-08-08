@@ -195,7 +195,7 @@ void shape_infer(const GNADwsc* op,
 
     NODE_VALIDATION_CHECK(op,
                           (static_cast<int64_t>(input_shape.size()) == (num_spatial + 2)) &&
-                              (static_cast<int64_t>(filters_shape.size()) == (num_spatial + 3)),
+                              (static_cast<int64_t>(filters_shape.size()) == (num_spatial + 2)),
                           "Data batch and filters rank do not match (data batch shape: ",
                           input_shape,
                           ", filters shape: ",
@@ -207,10 +207,10 @@ void shape_infer(const GNADwsc* op,
     output_shape.resize(num_spatial + 2);
     output_shape[0] = input_shape[0];
     // We're in (G)NHWC layout here
-    *(output_shape.rbegin()) = filters_shape[0];
+    *(output_shape.rbegin()) = *(filters_shape.rbegin());
 
     const auto n_data_channel = *(input_shape.rbegin());
-    const auto n_filter_channel = *(filters_shape.begin());
+    const auto n_filter_channel = *(filters_shape.rbegin());
 
     NODE_VALIDATION_CHECK(
         op,
@@ -227,7 +227,7 @@ void shape_infer(const GNADwsc* op,
 
     for (int64_t i = 0; i < num_spatial; ++i) {
         const auto& input_dim = input_shape[i + 1];
-        const auto& filters_dim = filters_shape[i + 2];
+        const auto& filters_dim = filters_shape[i + 1];
         if (input_dim.is_static() && filters_dim.is_static()) {
             const int64_t& window_dilated_dim = (filters_dim.get_length() - 1) * dilations[i] + 1;
             NODE_VALIDATION_CHECK(op,
@@ -317,7 +317,7 @@ void GNADwsc::validate_and_infer_types() {
     auto& data_shape = get_input_partial_shape(0);
     auto& filter_shape = get_input_partial_shape(1);
 
-    m_num_spatial = internal::calculate_num_spatial(this, data_shape, filter_shape, 2, 3);
+    m_num_spatial = internal::calculate_num_spatial(this, data_shape, filter_shape, 2, 2);
     internal::update_and_validate_attributes(this);
 
     std::vector<ov::PartialShape> input_shapes = {data_shape, filter_shape};

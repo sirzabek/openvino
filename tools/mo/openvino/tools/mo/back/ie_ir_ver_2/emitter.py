@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import hashlib
+import os
+import shutil
 
 import defusedxml.ElementTree as ET
 from defusedxml import defuse_stdlib

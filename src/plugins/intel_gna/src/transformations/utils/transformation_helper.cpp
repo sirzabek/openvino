@@ -46,17 +46,17 @@ void GetConvData(std::shared_ptr<ngraph::opset7::Convolution> conv, ConvData& co
     conv_data.element_type = conv->get_element_type();
 }
 
-void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data) {
+void GetConvData(std::shared_ptr<ov::intel_gna::op::GNAConvolution> conv, ConvData& conv_data) {
     OPENVINO_ASSERT(conv);
     conv_data.output_height = conv->get_output_shape(0)[2];
     conv_data.output_width = conv->get_output_shape(0)[3];
-    conv_data.input_channel_count = conv->input_value(0).get_shape()[1];
-    conv_data.input_height = conv->input_value(0).get_shape()[2];
-    conv_data.input_width = conv->input_value(0).get_shape()[3];
+    conv_data.input_channel_count = conv->input_value(0).get_shape()[3];
+    conv_data.input_height = conv->input_value(0).get_shape()[1];
+    conv_data.input_width = conv->input_value(0).get_shape()[2];
     conv_data.filter_count = conv->input_value(1).get_shape()[0];
-    conv_data.filter_channel_count = conv->input_value(1).get_shape()[1];
-    conv_data.filter_height = conv->input_value(1).get_shape()[2];
-    conv_data.filter_width = conv->input_value(1).get_shape()[3];
+    conv_data.filter_channel_count = conv->input_value(1).get_shape()[3];
+    conv_data.filter_height = conv->input_value(1).get_shape()[1];
+    conv_data.filter_width = conv->input_value(1).get_shape()[2];
     conv_data.filter_dilation_height = conv->get_dilations()[0];
     conv_data.filter_dilation_width = conv->get_dilations()[1];
     conv_data.filter_stride_height = conv->get_strides()[0];
@@ -70,17 +70,18 @@ void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& con
     conv_data.element_type = conv->get_element_type();
 }
 
-void GetConvData(std::shared_ptr<ov::intel_gna::op::GNAConvolution> conv, ConvData& conv_data) {
+void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data) {
     OPENVINO_ASSERT(conv);
     conv_data.output_height = conv->get_output_shape(0)[2];
     conv_data.output_width = conv->get_output_shape(0)[3];
     conv_data.input_channel_count = conv->input_value(0).get_shape()[3];
     conv_data.input_height = conv->input_value(0).get_shape()[1];
     conv_data.input_width = conv->input_value(0).get_shape()[2];
-    conv_data.filter_count = conv->input_value(1).get_shape()[0];
-    conv_data.filter_channel_count = conv->input_value(1).get_shape()[3];
-    conv_data.filter_height = conv->input_value(1).get_shape()[1];
-    conv_data.filter_width = conv->input_value(1).get_shape()[2];
+    conv_data.filter_group_count = conv->input_value(1).get_shape()[0];
+    conv_data.filter_count = conv->input_value(1).get_shape()[1];
+    conv_data.filter_channel_count = conv->input_value(1).get_shape()[4];
+    conv_data.filter_height = conv->input_value(1).get_shape()[2];
+    conv_data.filter_width = conv->input_value(1).get_shape()[3];
     conv_data.filter_dilation_height = conv->get_dilations()[0];
     conv_data.filter_dilation_width = conv->get_dilations()[1];
     conv_data.filter_stride_height = conv->get_strides()[0];

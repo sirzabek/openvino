@@ -22,6 +22,7 @@ struct ConvData {
     size_t input_channel_count;
     size_t filter_height;
     size_t filter_width;
+    size_t filter_group_count = 1;
     size_t filter_count;
     size_t filter_channel_count;
     size_t filter_dilation_height;
@@ -48,20 +49,20 @@ struct ConvData {
 void GetConvData(std::shared_ptr<ngraph::opset7::Convolution> conv, ConvData& conv_data);
 
 /**
- * @brief gets all group convolution related data into a struct for further processing
- * @param conv group convolution node to get data of
- * @param conv_data group convolution data structure to put data into
- * @return void
- */
-void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data);
-
-/**
  * @brief gets all convolution related data into a struct for further processing
  * @param conv GNA custom convolution node to get data of
  * @param conv_data convolution data structure to put data into
  * @return void
  */
 void GetConvData(std::shared_ptr<ov::intel_gna::op::GNAConvolution> conv, ConvData& conv_data);
+
+/**
+ * @brief gets all group convolution related data into a struct for further processing
+ * @param conv group convolution node to get data of
+ * @param conv_data group convolution data structure to put data into
+ * @return void
+ */
+void GetConvData(std::shared_ptr<ov::intel_gna::op::GNADwsc> conv, ConvData& conv_data);
 
 /**
  * @brief ngraph matcher predicate fusing existing predicates for consumers count and rank of a layer

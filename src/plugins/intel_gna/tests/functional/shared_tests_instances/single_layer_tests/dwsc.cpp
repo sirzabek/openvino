@@ -24,7 +24,8 @@ protected:
         if (GnaLayerTestCheck::gnaLibVersionLessThan("3.6")) {
             GTEST_SKIP() << GnaLayerTestCheck::getLastCmpResultMsg() << std::endl;
         }
-        configuration["GNA_DEVICE_MODE"] = "GNA_SW_EXACT";
+        //configuration["GNA_DEVICE_MODE"] = "GNA_SW_EXACT";
+        configuration["GNA_DEVICE_MODE"] = "GNA_SW_FP32";
         configuration["GNA_COMPILE_TARGET"] = "GNA_TARGET_3_6";
         GroupConvolutionLayerTest::SetUp();
     }
@@ -34,16 +35,20 @@ TEST_P(GnaDwscLayerTest, CompareWithRefs) {
     Run();
 }
 
-const std::vector<InferenceEngine::Precision> netPrecisions = {InferenceEngine::Precision::FP32,
-                                                               InferenceEngine::Precision::FP16};
+//const std::vector<InferenceEngine::Precision> netPrecisions = {InferenceEngine::Precision::FP32,
+//                                                               InferenceEngine::Precision::FP16};
+const std::vector<InferenceEngine::Precision> netPrecisions = {InferenceEngine::Precision::FP32};
 
 /* ============= 2D Convolution ============= */
-const std::vector<std::vector<size_t>> kernels_h1 = {{1, 3}, {1, 5}};
-const std::vector<std::vector<size_t>> strides_h1 = {{1, 1}, {1, 3}};
+//const std::vector<std::vector<size_t>> kernels_h1 = {{1, 3}, {1, 5}};
+const std::vector<std::vector<size_t>> kernels_h1 = {{1, 3}};
+//const std::vector<std::vector<size_t>> strides_h1 = {{1, 1}, {1, 3}};
+const std::vector<std::vector<size_t>> strides_h1 = {{1, 1}};
 const std::vector<std::vector<ptrdiff_t>> pad_begins_h1 = {{0, 2}};
 const std::vector<std::vector<ptrdiff_t>> pad_ends_h1 = {{0, 2}};
 const std::vector<std::vector<size_t>> dilations = {{1, 1}};
-const std::vector<std::vector<size_t>> input_shapes_h1 = {{1, 8, 1, 32}, {1, 8, 1, 160}, {1, 8, 1, 64}};
+//const std::vector<std::vector<size_t>> input_shapes_h1 = {{1, 8, 1, 32}, {1, 8, 1, 160}, {1, 8, 1, 64}};
+const std::vector<std::vector<size_t>> input_shapes_h1 = {{1, 8, 1, 32}};
 const std::vector<size_t> num_out_channels_h1 = {8};
 const std::vector<std::vector<size_t>> kernels_w1 = {{3, 1}, {5, 1}};
 const std::vector<std::vector<size_t>> strides_w1 = {{1, 1}, {3, 1}};

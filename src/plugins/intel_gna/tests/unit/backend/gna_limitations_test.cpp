@@ -381,7 +381,6 @@ struct ValidateCnn2DParams {
                                       parameters["kH"],
                                       parameters["kW"],
                                       parameters["kN"],
-                                      parameters["kG"],
                                       parameters["sH"],
                                       parameters["sW"],
                                       parameters["dH"],

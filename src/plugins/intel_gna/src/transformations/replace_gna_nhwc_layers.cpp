@@ -97,17 +97,23 @@ bool do_transformation(std::shared_ptr<ov::Node> convolution) {
     auto transpose_const =
         Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
     auto transpose_const_filters = transpose_const;
+    auto transpose_filters_input = convolution_filters_node;
 
-    // Check if we're dealing with GroupConvolution
+    // We need to reshape the filters if we're dealing with GroupConvolution
     if (convolution_filters_shape_size > convolution_input_shape_size) {
-        const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(convolution_filters_shape_size);
+        ov::Shape reshape_before_order = convolution_node->get_input_shape(1);
+        reshape_before_order.erase(reshape_before_order.begin() + 2);
+        const auto reshape_const_filters =
+            Constant::create(element::i32, ov::Shape{reshape_before_order.size()}, reshape_before_order);
+        ov::Shape transpose_before_order = ov::Shape{1, 2, 3, 0};
         transpose_const_filters =
             Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
+        transpose_filters_input = std::make_shared<Reshape>(convolution_filters_node, reshape_const_filters, false);
     }
 
     auto transpose_before = std::make_shared<Transpose>(convolution_input_data_node, transpose_const);
 
-    auto transpose_conv_constant = std::make_shared<Transpose>(convolution_filters_node, transpose_const_filters);
+    auto transpose_conv_constant = std::make_shared<Transpose>(transpose_filters_input, transpose_const_filters);
     auto conv_new = std::make_shared<To>(transpose_before,
                                          transpose_conv_constant,
                                          convolution_node->get_strides(),

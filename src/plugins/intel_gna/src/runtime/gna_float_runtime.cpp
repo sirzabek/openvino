@@ -67,7 +67,7 @@ void FP::infer() {
             break;
         }
         case kDnnDWSCOp: {
-            ApplyConvolutional2DTransform(comp);
+            ApplyDWSCTransform(comp);
             break;
         }
         case kDnnPiecewiselinearOp: {

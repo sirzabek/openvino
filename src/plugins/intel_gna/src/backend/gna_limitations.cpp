@@ -209,9 +209,9 @@ public:
                        const uint32_t inHeight,
                        const uint32_t inWidth,
                        const uint32_t inChannels,
+                       const uint32_t kN,
                        const uint32_t kH,
                        const uint32_t kW,
-                       const uint32_t kN,
                        const uint32_t strideH,
                        const uint32_t strideW,
                        const uint32_t dilationH,
@@ -255,9 +255,9 @@ public:
                       const uint32_t inHeight,
                       const uint32_t inWidth,
                       const uint32_t inChannels,
+                      const uint32_t kN,
                       const uint32_t kH,
                       const uint32_t kW,
-                      const uint32_t kN,
                       const uint32_t kG,
                       const uint32_t strideH,
                       const uint32_t strideW,
@@ -283,9 +283,9 @@ bool Validator_30::ValidateCnn2D(const std::string& name,
                                  const uint32_t inHeight,
                                  const uint32_t inWidth,
                                  const uint32_t inChannels,
+                                 const uint32_t kernelN,
                                  const uint32_t kernelH,
                                  const uint32_t kernelW,
-                                 const uint32_t kernelN,
                                  const uint32_t strideH,
                                  const uint32_t strideW,
                                  const uint32_t dilationH,
@@ -333,9 +333,9 @@ bool Validator_30::ValidateDwsc(const std::string& name,
                                 const uint32_t inHeight,
                                 const uint32_t inWidth,
                                 const uint32_t inChannels,
+                                const uint32_t kN,
                                 const uint32_t kH,
                                 const uint32_t kW,
-                                const uint32_t kN,
                                 const uint32_t kG,
                                 const uint32_t strideH,
                                 const uint32_t strideW,
@@ -427,9 +427,9 @@ public:
                        const uint32_t inHeight,
                        const uint32_t inWidth,
                        const uint32_t inChannels,
+                       const uint32_t kN,
                        const uint32_t kH,
                        const uint32_t kW,
-                       const uint32_t kN,
                        const uint32_t strideH,
                        const uint32_t strideW,
                        const uint32_t dilationH,
@@ -473,9 +473,9 @@ public:
                       const uint32_t inHeight,
                       const uint32_t inWidth,
                       const uint32_t inChannels,
+                      const uint32_t kN,
                       const uint32_t kH,
                       const uint32_t kW,
-                      const uint32_t kN,
                       const uint32_t kG,
                       const uint32_t strideH,
                       const uint32_t strideW,
@@ -551,9 +551,9 @@ bool Validator_35::ValidateCnn2D(const std::string& name,
                                  const uint32_t inHeight,
                                  const uint32_t inWidth,
                                  const uint32_t inChannels,
+                                 const uint32_t kernelN,
                                  const uint32_t kernelH,
                                  const uint32_t kernelW,
-                                 const uint32_t kernelN,
                                  const uint32_t strideH,
                                  const uint32_t strideW,
                                  const uint32_t dilationH,
@@ -609,9 +609,9 @@ bool Validator_35::ValidateDwsc(const std::string& name,
                                 const uint32_t inHeight,
                                 const uint32_t inWidth,
                                 const uint32_t inChannels,
+                                const uint32_t kN,
                                 const uint32_t kH,
                                 const uint32_t kW,
-                                const uint32_t kN,
                                 const uint32_t kG,
                                 const uint32_t strideH,
                                 const uint32_t strideW,
@@ -683,6 +683,7 @@ class Validator_36 : public Validator_35 {
     struct CnnLimits {
         const RangeLimit2D kInputHWLimit;
         const RangeMultipleLimit kInputChannelsNumberLimit;
+        const RangeLimit kKernelsNumberLimit;
         const RangeLimit2D kKerneHWlLimit;
         const RangeLimit2D kStrideHWLimit;
         const RangeLimit2D kDilationLimit;
@@ -699,9 +700,9 @@ public:
                       const uint32_t inHeight,
                       const uint32_t inWidth,
                       const uint32_t inChannels,
+                      const uint32_t kN,
                       const uint32_t kH,
                       const uint32_t kW,
-                      const uint32_t kN,
                       const uint32_t kG,
                       const uint32_t strideH,
                       const uint32_t strideW,
@@ -713,7 +714,8 @@ public:
 const Validator_36::CnnLimits Validator_36::kDwscLimits{
     {{1, 65535, "input height"}, {1, 65535, "input width"}},                        // kInputHWLimit
     {{8, 1024, "number of input channels"}, 8},                                     // kInputChannelsNumberLimit
-    {{1, 255, "kernel height"}, {1, 255, "kernel width"}},                          // kKerneHWlLimit
+    {1, 1, "number of kernels"},                                                    // kKernelsNumberLimit
+    {{1, 255, "kernel height"}, {1, 255, "kernel width"}},                          // kKernelHWLimit
     {{1, 255, "convolution stride height"}, {1, 255, "convolution stride width"}},  // kStrideHWLimit
     {{Limitations::kConvDilationHeight, Limitations::kConvDilationHeight, "dilation height"},  // kDilationLimit
      {Limitations::kConvDilationWidth, Limitations::kConvDilationWidth, "dilation width"}},
@@ -725,9 +727,9 @@ bool Validator_36::ValidateDwsc(const std::string& name,
                                 const uint32_t inHeight,
                                 const uint32_t inWidth,
                                 const uint32_t inChannels,
+                                const uint32_t kernelN,
                                 const uint32_t kernelH,
                                 const uint32_t kernelW,
-                                const uint32_t kernelN,
                                 const uint32_t kernelG,
                                 const uint32_t strideH,
                                 const uint32_t strideW,
@@ -735,9 +737,10 @@ bool Validator_36::ValidateDwsc(const std::string& name,
                                 const uint32_t dilationW,
                                 const bool throwOnError) const {
     auto error = kDwscLimits.kInputHWLimit.GetErrorOrEmpty(inHeight, inWidth);
-    const IsEqualToLimit kernels_count{inChannels / kernelG,
-                                       "number of kernels (must be equal to input channels count)"};
-    error += kernels_count.GetErrorOrEmpty(kernelN);
+    auto& kKernelsNumberLimit = kDwscLimits.kKernelsNumberLimit;
+    error += kKernelsNumberLimit.GetErrorOrEmpty(kernelN);
+    const IsEqualToLimit kernels_count{inChannels, "input channels count (must be equal to kernel groups)"};
+    error += kernels_count.GetErrorOrEmpty(kernelG);
     auto& inputChannelsNumberLimit = kDwscLimits.kInputChannelsNumberLimit;
     error += inputChannelsNumberLimit.GetErrorOrEmpty(inChannels);
     auto& kerneHWlLimit = kDwscLimits.kKerneHWlLimit;
@@ -941,9 +944,9 @@ bool Limitations::is_conv_supported(const std::shared_ptr<ov::intel_gna::op::GNA
                                                   static_cast<uint32_t>(conv_data.input_height),
                                                   static_cast<uint32_t>(conv_data.input_width),
                                                   static_cast<uint32_t>(conv_data.input_channel_count),
+                                                  static_cast<uint32_t>(conv_data.filter_count),
                                                   static_cast<uint32_t>(conv_data.filter_height),
                                                   static_cast<uint32_t>(conv_data.filter_width),
-                                                  static_cast<uint32_t>(conv_data.filter_channel_count),
                                                   static_cast<uint32_t>(conv_data.filter_stride_height),
                                                   static_cast<uint32_t>(conv_data.filter_stride_width),
                                                   static_cast<uint32_t>(conv_data.filter_dilation_height),
@@ -979,10 +982,10 @@ bool Limitations::is_dwsc_supported(const std::shared_ptr<ov::intel_gna::op::GNA
                                              conv_data.input_height,
                                              conv_data.input_width,
                                              conv_data.input_channel_count,
+                                             conv_data.filter_count,
                                              conv_data.filter_height,
                                              conv_data.filter_width,
-                                             conv_data.filter_count,
-                                             conv_data.filter_group_count,
+                                             conv_data.filter_channel_count,
                                              conv_data.filter_stride_height,
                                              conv_data.filter_stride_width,
                                              conv_data.filter_dilation_height,

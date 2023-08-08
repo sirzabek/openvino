@@ -22,7 +22,6 @@ struct ConvData {
     size_t input_channel_count;
     size_t filter_height;
     size_t filter_width;
-    size_t filter_group_count = 1;
     size_t filter_count;
     size_t filter_channel_count;
     size_t filter_dilation_height;

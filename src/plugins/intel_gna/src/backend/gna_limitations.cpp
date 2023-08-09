@@ -809,6 +809,7 @@ constexpr uint32_t Limitations::kBytesPerSplitElement;
 constexpr uint32_t Limitations::kBytesPerCropElement;
 constexpr uint32_t Limitations::kBytesPerConcatElement;
 constexpr uint32_t Limitations::kMemoryPageSize;
+constexpr uint32_t Limitations::kTransposeMaxMinDim;
 
 thread_local std::shared_ptr<Limitations> Limitations::k_instance{nullptr};
 

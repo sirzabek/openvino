@@ -71,6 +71,7 @@
 #include "transformations/ts_concat_forward.hpp"
 #include "transformations/ts_split_backward.hpp"
 #include "transformations/unfuse_reshape_and_transpose.hpp"
+#include "transformations/decompose_transpose.hpp"
 #include "transformations/utils/transformation_helper.hpp"
 #include "transformations/utils/utils.hpp"
 
@@ -117,9 +118,9 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
         manager.register_pass<ov::intel_gna::pass::ConvertMatmulWithBiasToPointWiseConvolution>();
         manager.register_pass<ov::intel_gna::pass::ConvertMatmulToPointWiseConvolution>();
     }
-    manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithFq>();
-    manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithBias>();
-    manager.register_pass<ov::intel_gna::pass::SplitConvolution>();
+    //manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithFq>();
+    //manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithBias>();
+    //manager.register_pass<ov::intel_gna::pass::SplitConvolution>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithTranspose>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithFq>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithAdd>();
@@ -146,6 +147,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
         manager.register_pass<ov::intel_gna::pass::TransposeCompress>();
         manager.register_pass<ov::intel_gna::pass::TSConcatForward>();
         manager.register_pass<ov::intel_gna::pass::TSSplitBackward>();
+        manager.register_pass<ov::intel_gna::pass::DecomposeTranspose>();
         manager.register_pass<ov::intel_gna::pass::GatherSinkingGeneral>();
         manager.register_pass<ov::pass::ReshapeSequenceFusion>();
         manager.register_pass<ov::pass::TransposeToReshape>();

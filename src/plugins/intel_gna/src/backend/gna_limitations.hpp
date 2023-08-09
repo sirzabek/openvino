@@ -316,6 +316,7 @@ public:
     constexpr static uint32_t kMaxLayersCountGNA2_0 = 4096;
     constexpr static uint32_t kMaxLayersCountGNA3_X = 8192;
     constexpr static uint32_t kDWSCFilterDepth = 1;
+    constexpr static uint32_t kTransposeMaxMinDim = 8;
 
     // Currently split layer only supports 2 bytes in int16 and int8 mode.
     // In fp32 mode this is not necessary but is useful for testing

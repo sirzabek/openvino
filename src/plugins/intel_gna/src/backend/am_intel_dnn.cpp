@@ -211,7 +211,7 @@ void AMIntelDNN::InitConvolutional2DComponentPrivate(intel_dnn_component_t& comp
     comp.tensors.push_back(outputTensor);
     comp.tensors.push_back(filterTensor);
     comp.tensors.push_back(biasTensor);
-    comp.operation = is_dwsc ? kDnnDWSCOp : kDnnConvolutional2dOp;
+    comp.operation = is_dwsc ? kDnnDwscOp : kDnnConvolutional2dOp;
     comp.orientation_in = kDnnNonInterleavedOrientation;
     comp.orientation_out = kDnnNonInterleavedOrientation;
     comp.ptr_inputs = ptr_inputs;
@@ -1362,7 +1362,7 @@ uint32_t AMIntelDNN::CountLayers() {
     uint32_t n = 0;
     for (auto&& c : component) {
         if (c.operation == kDnnAffineOp || (c.operation == kDnnDiagonalOp) || (c.operation == kDnnConvolutional1dOp) ||
-            (c.operation == kDnnConvolutional2dOp) || (c.operation == kDnnDWSCOp) ||
+            (c.operation == kDnnConvolutional2dOp) || (c.operation == kDnnDwscOp) ||
             (c.operation == kDnnDeinterleaveOp) || (c.operation == kDnnInterleaveOp) ||
             (c.operation == kDnnRecurrentOp) || (c.operation == kDnnCopyOp)) {
             n++;
@@ -1486,7 +1486,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
 
             AdvanceCnnOperationIfAllApplied(component, i, gnaOperation);
             break;
-        case kDnnDWSCOp:
+        case kDnnDwscOp:
             HelperGna2OperationInitDWSC(
                 gnaOperation,
                 gnaUserAllocator,
@@ -1607,7 +1607,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
             if ((component[i - 1].operation == kDnnAffineOp) || (component[i - 1].operation == kDnnDiagonalOp) ||
                 (component[i - 1].operation == kDnnRecurrentOp) ||
                 (component[i - 1].operation == kDnnConvolutional1dOp) ||
-                (component[i - 1].operation == kDnnConvolutional2dOp) || (component[i - 1].operation == kDnnDWSCOp) ||
+                (component[i - 1].operation == kDnnConvolutional2dOp) || (component[i - 1].operation == kDnnDwscOp) ||
                 ((component[i - 1].operation == kDnnMaxPoolOp) &&
                  (component[i - 2].operation == kDnnConvolutional1dOp ||
                   component[i - 2].operation == kDnnConvolutional2dOp))) {

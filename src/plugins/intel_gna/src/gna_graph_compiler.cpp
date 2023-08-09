@@ -51,18 +51,20 @@ using namespace common;
 using namespace memory;
 using namespace limitations;
 
-static bool CheckIFLastComponentIsPrecededByConv2D(const backend::DnnComponents::storage_type& components,
+static bool CheckIfLastComponentIsPrecededByConv2d(const backend::DnnComponents::storage_type& components,
                                                    bool verify_with_pooling = true) {
     bool proceded_by_conv2D = false;
     auto last_element = components.rbegin();
     if (components.size() > 1) {
         last_element++;
-        if (last_element->dnnComponent.operation == kDnnConvolutional2dOp) {
+        if (last_element->dnnComponent.operation == kDnnConvolutional2dOp ||
+            last_element->dnnComponent.operation == kDnnDwscOp) {
             proceded_by_conv2D = true;
         } else if (verify_with_pooling && components.size() > 2) {
             auto prev_operation = last_element->dnnComponent.operation;
             last_element++;
-            if (last_element->dnnComponent.operation == kDnnConvolutional2dOp) {
+            if (last_element->dnnComponent.operation == kDnnConvolutional2dOp ||
+                last_element->dnnComponent.operation == kDnnDwscOp) {
                 proceded_by_conv2D = (prev_operation == kDnnMaxPoolOp);
             }
         }
@@ -2253,7 +2255,7 @@ void GNAGraphCompiler::PWLPrimitive(InferenceEngine::CNNLayerPtr layer) {
                          output_pwl_scale_factor,
                          gna_config.gnaFlags.input_low_precision,
                          layer->getNode(),
-                         CheckIFLastComponentIsPrecededByConv2D(dnnComponents.components),
+                         CheckIfLastComponentIsPrecededByConv2d(dnnComponents.components),
                          ptr_pwl_segments);
         }
         ptr_pwl_segments_target = reinterpret_cast<gna_pwl_segment_t*>(&ptr_pwl_segments_target);

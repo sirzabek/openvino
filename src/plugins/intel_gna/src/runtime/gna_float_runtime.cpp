@@ -66,7 +66,7 @@ void FP::infer() {
             ApplyConvolutional2DTransform(comp);
             break;
         }
-        case kDnnDWSCOp: {
+        case kDnnDwscOp: {
             ApplyDWSCTransform(comp);
             break;
         }
@@ -76,7 +76,8 @@ void FP::infer() {
         }
         case kDnnMaxPoolOp: {
             bool is_fused_with_convolution_2d = false;
-            if (i > 0 && (dnn->component[i - 1].operation == kDnnConvolutional2dOp || dnn->component[i - 1].operation == kDnnDWSCOp)) {
+            if (i > 0 && (dnn->component[i - 1].operation == kDnnConvolutional2dOp ||
+                          dnn->component[i - 1].operation == kDnnDwscOp)) {
                 is_fused_with_convolution_2d = true;
             }
 

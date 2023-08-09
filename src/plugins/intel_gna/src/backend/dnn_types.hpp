@@ -96,7 +96,7 @@ typedef enum {
     kDnnDiagonalOp,
     kDnnConvolutional1dOp,
     kDnnConvolutional2dOp,
-    kDnnDWSCOp,
+    kDnnDwscOp,
     kDnnPiecewiselinearOp,
     kDnnMaxPoolOp,
     kDnnRecurrentOp,

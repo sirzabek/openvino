@@ -271,6 +271,13 @@ static const std::map<Gna2OperationType, std::vector<uint32_t>> GnaParamSize{
       sizeof(Gna2Shape),
       sizeof(Gna2Shape),
       sizeof(Gna2Shape)}},
+    {Gna2OperationTypeConvolutionDWSC,
+     {sizeof(Gna2Shape),
+      sizeof(Gna2BiasMode),
+      sizeof(Gna2PoolingMode),
+      sizeof(Gna2Shape),
+      sizeof(Gna2Shape),
+      sizeof(Gna2Shape)}},
     {Gna2OperationTypeCopy, {sizeof(Gna2Shape)}},
     {Gna2OperationTypeTransposition, {sizeof(Gna2Shape)}},
 };
@@ -345,6 +352,7 @@ void GNAModelSerial::Import(void* basePointer,
         case Gna2OperationTypeElementWiseAffine:
         case Gna2OperationTypeFullyConnectedAffine:
         case Gna2OperationTypeConvolution:
+        case Gna2OperationTypeConvolutionDWSC:
         case Gna2OperationTypeCopy:
         case Gna2OperationTypeTransposition:
             break;
@@ -552,6 +560,7 @@ void GNAModelSerial::Export(const GnaAllocations& allocations, std::ostream& os)
         case Gna2OperationTypeElementWiseAffine:
         case Gna2OperationTypeFullyConnectedAffine:
         case Gna2OperationTypeConvolution:
+        case Gna2OperationTypeConvolutionDWSC:
         case Gna2OperationTypeCopy:
         case Gna2OperationTypeTransposition:
             break;

@@ -795,8 +795,8 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
         ptr_weights,
         ptr_biases,
         is_dwsc);
-    currentComponent.num_bytes_per_input = inputs->getPrecision().size();
-    currentComponent.num_bytes_per_output = outputs->getPrecision().size();
+    currentComponent.num_bytes_per_input = static_cast<uint32_t>(inputs->getPrecision().size());
+    currentComponent.num_bytes_per_output = static_cast<uint32_t>(outputs->getPrecision().size());
 
     if (inputs->getLayout() == InferenceEngine::Layout::NHWC) {
         currentComponent.orientation_in = kDnnInterleavedOrientation;

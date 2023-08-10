@@ -980,17 +980,17 @@ bool Limitations::is_dwsc_supported(const std::shared_ptr<ov::intel_gna::op::GNA
 
     if (m_cnn_validator) {
         return m_cnn_validator->ValidateDwsc(dwsc->get_friendly_name(),
-                                             conv_data.input_height,
-                                             conv_data.input_width,
-                                             conv_data.input_channel_count,
-                                             conv_data.filter_count,
-                                             conv_data.filter_height,
-                                             conv_data.filter_width,
-                                             conv_data.filter_channel_count,
-                                             conv_data.filter_stride_height,
-                                             conv_data.filter_stride_width,
-                                             conv_data.filter_dilation_height,
-                                             conv_data.filter_dilation_width,
+                                             static_cast<uint32_t>(conv_data.input_height),
+                                             static_cast<uint32_t>(conv_data.input_width),
+                                             static_cast<uint32_t>(conv_data.input_channel_count),
+                                             static_cast<uint32_t>(conv_data.filter_count),
+                                             static_cast<uint32_t>(conv_data.filter_height),
+                                             static_cast<uint32_t>(conv_data.filter_width),
+                                             static_cast<uint32_t>(conv_data.filter_channel_count),
+                                             static_cast<uint32_t>(conv_data.filter_stride_height),
+                                             static_cast<uint32_t>(conv_data.filter_stride_width),
+                                             static_cast<uint32_t>(conv_data.filter_dilation_height),
+                                             static_cast<uint32_t>(conv_data.filter_dilation_width),
                                              is_exception_allowed);
     }
     return false;

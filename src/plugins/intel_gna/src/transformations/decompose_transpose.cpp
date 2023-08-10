@@ -364,6 +364,8 @@ static std::function<bool(Output<Node>)> verify_transpose() {
 
         if (input_shape.size() == 4 && input_shape[0] != 1)
             return false;
+
+        return true;
     };
 }
 

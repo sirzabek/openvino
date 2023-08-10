@@ -349,7 +349,8 @@ static bool Convert(std::shared_ptr<Node> transpose_node) {
     if (DecomposeTransposeType3(transpose, transpose_data))
         return true;
 
-    THROW_GNA_EXCEPTION << "Transpose layer " << transpose_data.name << " is not supported by GNA Plugin";
+    // TODO: checks need to be improved in order not to block supported transposes
+    //THROW_GNA_EXCEPTION << "Transpose layer " << transpose_data.name << " is not supported by GNA Plugin";
 
     return false;
 }

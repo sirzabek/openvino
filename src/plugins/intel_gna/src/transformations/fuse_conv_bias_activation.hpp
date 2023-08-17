@@ -24,28 +24,40 @@ public:
     bool run_on_model(const std::shared_ptr<ov::Model>& m) override;
 };
 
-class FuseConvolutionWithBiasAdd : public ov::pass::MatcherPass {
+class FuseGnaConvWithBiasAdd : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("FuseConvolutionWithBiasAdd", "0");
-    FuseConvolutionWithBiasAdd();
+    OPENVINO_RTTI("FuseGnaConvWithBiasAdd", "0");
+    FuseGnaConvWithBiasAdd();
 };
 
-class FuseGroupConvolutionWithBiasAdd : public ov::pass::MatcherPass {
+class FuseGnaConvWithBiasAddAdd : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("FuseGroupConvolutionWithBiasAdd", "0");
-    FuseGroupConvolutionWithBiasAdd();
+    OPENVINO_RTTI("FuseGnaConvWithBiasAddAdd", "0");
+    FuseGnaConvWithBiasAddAdd();
 };
 
-class FuseConvolutionWithBiasAddAdd : public ov::pass::MatcherPass {
+class FuseGnaConvWithActivation : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("FuseConvolutionWithBiasAddAdd", "0");
-    FuseConvolutionWithBiasAddAdd();
+    OPENVINO_RTTI("FuseGnaConvWithActivation", "0");
+    FuseGnaConvWithActivation();
 };
 
-class SinkActivationToGnaConvolution : public ov::pass::MatcherPass {
+class FuseGnaDwscWithBiasAdd : public ov::pass::MatcherPass {
 public:
-    OPENVINO_RTTI("SinkActivationToGnaConvolution", "0");
-    SinkActivationToGnaConvolution();
+    OPENVINO_RTTI("FuseGnaDwscWithBiasAdd", "0");
+    FuseGnaDwscWithBiasAdd();
+};
+
+class FuseGnaDwscWithBiasAddAdd : public ov::pass::MatcherPass {
+public:
+    OPENVINO_RTTI("FuseGnaDwscWithBiasAddAdd", "0");
+    FuseGnaDwscWithBiasAddAdd();
+};
+
+class FuseGnaDwscWithActivation : public ov::pass::MatcherPass {
+public:
+    OPENVINO_RTTI("FuseGnaDwscWithActivation", "0");
+    FuseGnaDwscWithActivation();
 };
 
 class GnaConvolutionFusion : public ov::pass::ModelPass {

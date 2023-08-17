@@ -1030,11 +1030,12 @@ void GNAGraphCompiler::PoolingPrimitive(InferenceEngine::CNNLayerPtr layer) {
     bool is2DPooling = false;
     if (dnnComponents.components.size() > 0) {
         const auto last = dnnComponents.components.back();
-        if (last.dnnComponent.operation == kDnnConvolutional2dOp) {
+        if (last.dnnComponent.operation == kDnnConvolutional2dOp ||
+            last.dnnComponent.operation == kDnnDwscOp) {
             is2DPooling = true;
         } else if (last.dnnComponent.operation == kDnnPiecewiselinearOp && dnnComponents.components.size() > 1) {
             const auto& prev2 = *std::prev(dnnComponents.components.cend(), 2);
-            is2DPooling = prev2.dnnComponent.operation == kDnnConvolutional2dOp;
+            is2DPooling = (prev2.dnnComponent.operation == kDnnConvolutional2dOp || prev2.dnnComponent.operation == kDnnDwscOp);
         }
     }
 

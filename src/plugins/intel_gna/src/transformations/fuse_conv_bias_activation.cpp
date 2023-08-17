@@ -25,6 +25,7 @@
 #include "openvino/pass/pattern/op/pattern.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "ops/gna_convolution.hpp"
+#include "ops/gna_dwsc.hpp"
 #include "rt_info/gna_node_id.hpp"
 
 using namespace ov::pass::pattern;
@@ -51,9 +52,10 @@ std::pair<std::shared_ptr<A>, std::shared_ptr<B>> parse_eltwise_inputs(std::shar
 }
 
 struct GnaConvCallbacks {
-    static bool gna_convolution_with_biasadd(Matcher& m) {
+    template <class T>
+    static bool gna_conv_with_biasadd(Matcher& m) {
         auto eltwise = m.get_match_root();
-        auto m_conv_const_pair = parse_eltwise_inputs<GNAConvolution, Constant>(eltwise);
+        auto m_conv_const_pair = parse_eltwise_inputs<T, Constant>(eltwise);
         auto m_conv = m_conv_const_pair.first;
         auto m_const = m_conv_const_pair.second;
 
@@ -73,14 +75,14 @@ struct GnaConvCallbacks {
         const ov::Output<ov::Node>& filters = m_conv->input(1).get_source_output();
         const ov::Output<ov::Node>& bias = m_const->output(0);
 
-        std::shared_ptr<ov::Node> gna_conv = std::make_shared<GNAConvolution>(data,
-                                                                              filters,
-                                                                              bias,
-                                                                              m_conv->get_strides(),
-                                                                              m_conv->get_pads_begin(),
-                                                                              m_conv->get_pads_end(),
-                                                                              m_conv->get_dilations(),
-                                                                              m_conv->get_auto_pad());
+        std::shared_ptr<ov::Node> gna_conv = std::make_shared<T>(data,
+                                                                 filters,
+                                                                 bias,
+                                                                 m_conv->get_strides(),
+                                                                 m_conv->get_pads_begin(),
+                                                                 m_conv->get_pads_end(),
+                                                                 m_conv->get_dilations(),
+                                                                 m_conv->get_auto_pad());
 
         gna_conv->set_friendly_name(eltwise->get_friendly_name());
 
@@ -94,15 +96,16 @@ struct GnaConvCallbacks {
         return true;
     }
 
-    static std::pair<std::shared_ptr<GNAConvolution>, std::shared_ptr<ov::Node>> parse_gna_conv_inputs(
+    template <class T>
+    static std::pair<std::shared_ptr<T>, std::shared_ptr<ov::Node>> parse_gna_conv_inputs(
         std::shared_ptr<ov::Node> add) {
-        std::shared_ptr<GNAConvolution> gna_conv = nullptr;
+        std::shared_ptr<T> gna_conv = nullptr;
 
         auto input0 = add->input(0).get_source_output().get_node_shared_ptr();
         auto input1 = add->input(1).get_source_output().get_node_shared_ptr();
 
-        auto gna_conv0 = std::dynamic_pointer_cast<GNAConvolution>(input0);
-        auto gna_conv1 = std::dynamic_pointer_cast<GNAConvolution>(input1);
+        auto gna_conv0 = std::dynamic_pointer_cast<T>(input0);
+        auto gna_conv1 = std::dynamic_pointer_cast<T>(input1);
 
         auto can_be_fused = [](const std::shared_ptr<ov::Node>& target, const std::shared_ptr<ov::Node>& fused_input) {
             return (target && fused_input &&
@@ -127,9 +130,10 @@ struct GnaConvCallbacks {
         return {nullptr, nullptr};
     }
 
-    static bool sink_add_to_gna_convolution(Matcher& m) {
+    template <class T>
+    static bool sink_add_to_gna_conv(Matcher& m) {
         auto add = std::dynamic_pointer_cast<Add>(m.get_match_root());
-        auto gna_conv_node_pair = parse_gna_conv_inputs(m.get_match_root());
+        auto gna_conv_node_pair = parse_gna_conv_inputs<T>(m.get_match_root());
         auto gna_conv = gna_conv_node_pair.first;
         auto node = gna_conv_node_pair.second;
 
@@ -145,14 +149,14 @@ struct GnaConvCallbacks {
         const ov::Output<ov::Node>& filters = gna_conv->input(1).get_source_output();
         const ov::Output<ov::Node>& bias = gna_conv->input(2).get_source_output();
 
-        std::shared_ptr<ov::Node> gna_conv_add = std::make_shared<GNAConvolution>(data,
-                                                                                  filters,
-                                                                                  bias,
-                                                                                  gna_conv->get_strides(),
-                                                                                  gna_conv->get_pads_begin(),
-                                                                                  gna_conv->get_pads_end(),
-                                                                                  gna_conv->get_dilations(),
-                                                                                  gna_conv->get_auto_pad());
+        std::shared_ptr<ov::Node> gna_conv_add = std::make_shared<T>(data,
+                                                                     filters,
+                                                                     bias,
+                                                                     gna_conv->get_strides(),
+                                                                     gna_conv->get_pads_begin(),
+                                                                     gna_conv->get_pads_end(),
+                                                                     gna_conv->get_dilations(),
+                                                                     gna_conv->get_auto_pad());
 
         gna_conv_add->set_friendly_name(add->get_friendly_name());
         ov::copy_runtime_info({node, gna_conv}, gna_conv_add);
@@ -172,9 +176,11 @@ struct GnaConvCallbacks {
         return true;
     }
 
-    static bool sink_activation_to_gna_convolution(Matcher& m) {
+    template <class T>
+    static bool sink_activation_to_gna_conv(Matcher& m) {
         auto activation_node = m.get_match_root();
-        auto gna_conv = std::dynamic_pointer_cast<GNAConvolution>(
+        auto gna_conv =
+            std::dynamic_pointer_cast<T>(
             activation_node->input(0).get_source_output().get_node_shared_ptr());
         if (gna_conv->get_activation() != ActivationType::NO_ACTIVATION) {
             return false;
@@ -329,42 +335,84 @@ bool ov::intel_gna::pass::GnaFuseCleanUpNodesOrder::run_on_model(const std::shar
     return reset_nodes_order(m);
 }
 
-ov::intel_gna::pass::FuseConvolutionWithBiasAdd::FuseConvolutionWithBiasAdd() {
-    MATCHER_SCOPE(FuseConvolutionWithBiasAdd);
+ov::intel_gna::pass::FuseGnaConvWithBiasAdd::FuseGnaConvWithBiasAdd() {
+    MATCHER_SCOPE(FuseGnaConvWithBiasAdd);
     auto conv = wrap_type<GNAConvolution>(consumers_count(1));
     auto bias = wrap_type<Constant>();
     auto add = wrap_type<Add>({conv, bias}, is_bias_to_be_fused);
 
     matcher_pass_callback callback = [](Matcher& m) {
-        return GnaConvCallbacks::gna_convolution_with_biasadd(m);
+        return GnaConvCallbacks::gna_conv_with_biasadd<GNAConvolution>(m);
     };
 
     auto m = std::make_shared<Matcher>(add, matcher_name);
     register_matcher(m, callback);
 }
 
-ov::intel_gna::pass::FuseConvolutionWithBiasAddAdd::FuseConvolutionWithBiasAddAdd() {
-    MATCHER_SCOPE(FuseConvolutionWithBiasAddAdd);
+ov::intel_gna::pass::FuseGnaConvWithBiasAddAdd::FuseGnaConvWithBiasAddAdd() {
+    MATCHER_SCOPE(FuseGnaConvWithBiasAddAdd);
     auto gna_convolution = wrap_type<GNAConvolution>(consumers_count(1));
     auto add1 = wrap_type<Add>({gna_convolution, any_input()}, is_add_to_be_fused);
     auto add2 = wrap_type<Add>({any_input(), gna_convolution}, is_add_to_be_fused);
     auto add = std::make_shared<::op::Or>(ov::OutputVector{add1, add2});
 
     matcher_pass_callback callback = [](Matcher& m) {
-        return GnaConvCallbacks::sink_add_to_gna_convolution(m);
+        return GnaConvCallbacks::sink_add_to_gna_conv<GNAConvolution>(m);
     };
 
     auto m = std::make_shared<Matcher>(add, matcher_name);
     register_matcher(m, callback);
 }
 
-ov::intel_gna::pass::SinkActivationToGnaConvolution::SinkActivationToGnaConvolution() {
-    MATCHER_SCOPE(SinkActivationToGnaConvolution);
+ov::intel_gna::pass::FuseGnaConvWithActivation::FuseGnaConvWithActivation() {
+    MATCHER_SCOPE(FuseGnaConvWithActivation);
     auto gna_convolution = wrap_type<GNAConvolution>(consumers_count(1));
     auto activation = wrap_type<Relu, Sigmoid, Tanh, Abs, Log, Clamp, Sign>({gna_convolution});
 
     matcher_pass_callback callback = [](Matcher& m) {
-        return GnaConvCallbacks::sink_activation_to_gna_convolution(m);
+        return GnaConvCallbacks::sink_activation_to_gna_conv<GNAConvolution>(m);
+    };
+
+    auto m = std::make_shared<Matcher>(activation, matcher_name);
+    register_matcher(m, callback);
+}
+
+ov::intel_gna::pass::FuseGnaDwscWithBiasAdd::FuseGnaDwscWithBiasAdd() {
+    MATCHER_SCOPE(FuseGnaDwscWithBiasAdd);
+    auto conv = wrap_type<GNADwsc>(consumers_count(1));
+    auto bias = wrap_type<Constant>();
+    auto add = wrap_type<Add>({conv, bias}, is_bias_to_be_fused);
+
+    matcher_pass_callback callback = [](Matcher& m) {
+        return GnaConvCallbacks::gna_conv_with_biasadd<GNADwsc>(m);
+    };
+
+    auto m = std::make_shared<Matcher>(add, matcher_name);
+    register_matcher(m, callback);
+}
+
+ov::intel_gna::pass::FuseGnaDwscWithBiasAddAdd::FuseGnaDwscWithBiasAddAdd() {
+    MATCHER_SCOPE(FuseGnaDwscWithBiasAddAdd);
+    auto gna_convolution = wrap_type<GNADwsc>(consumers_count(1));
+    auto add1 = wrap_type<Add>({gna_convolution, any_input()}, is_add_to_be_fused);
+    auto add2 = wrap_type<Add>({any_input(), gna_convolution}, is_add_to_be_fused);
+    auto add = std::make_shared<::op::Or>(ov::OutputVector{add1, add2});
+
+    matcher_pass_callback callback = [](Matcher& m) {
+        return GnaConvCallbacks::sink_add_to_gna_conv<GNADwsc>(m);
+    };
+
+    auto m = std::make_shared<Matcher>(add, matcher_name);
+    register_matcher(m, callback);
+}
+
+ov::intel_gna::pass::FuseGnaDwscWithActivation::FuseGnaDwscWithActivation() {
+    MATCHER_SCOPE(FuseGnaDwscWithActivation);
+    auto gna_convolution = wrap_type<GNADwsc>(consumers_count(1));
+    auto activation = wrap_type<Relu, Sigmoid, Tanh, Abs, Log, Clamp, Sign>({gna_convolution});
+
+    matcher_pass_callback callback = [](Matcher& m) {
+        return GnaConvCallbacks::sink_activation_to_gna_conv<GNADwsc>(m);
     };
 
     auto m = std::make_shared<Matcher>(activation, matcher_name);
@@ -378,9 +426,12 @@ bool ov::intel_gna::pass::GnaConvolutionFusion::run_on_model(const std::shared_p
     manager.register_pass<GnaFuseMarkUpNodesOrder>();
 
     auto fuse_conv_bias_add_activation = manager.register_pass<ov::pass::GraphRewrite>();
-    ADD_MATCHER(fuse_conv_bias_add_activation, FuseConvolutionWithBiasAdd)
-    ADD_MATCHER(fuse_conv_bias_add_activation, FuseConvolutionWithBiasAddAdd)
-    ADD_MATCHER(fuse_conv_bias_add_activation, SinkActivationToGnaConvolution)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaConvWithBiasAdd)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaConvWithBiasAddAdd)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaConvWithActivation)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaDwscWithBiasAdd)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaDwscWithBiasAddAdd)
+    ADD_MATCHER(fuse_conv_bias_add_activation, FuseGnaDwscWithActivation)
     fuse_conv_bias_add_activation->set_name("ov::intel_gna::pass::fuse_conv_bias_add_activation");
 
     manager.register_pass<GnaFuseCleanUpNodesOrder>();

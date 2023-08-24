@@ -209,9 +209,9 @@ void print_reference_compare_results(ScoreErrorT const& totalError, size_t frame
     stream << " max abs ref score: " << totalError.maxAbsRefScore << std::endl;
     stream << " avg abs ref score: " << avg_abs_ref_score << std::endl;
     stream << "         max error: " << totalError.maxError << std::endl;
-    stream << "       max error %: " << totalError.maxError * 100.0f / totalError.maxAbsRefScore << std::endl;
     stream << "         avg error: " << avg_error << std::endl;
     stream << "       avg error %: " << avg_error * 100.0f / avg_abs_ref_score << std::endl;
+    stream << "       max error %: " << totalError.maxError * 100.0f / avg_abs_ref_score << std::endl;
     stream << "     avg rms error: " << totalError.sumRmsError / framesNum << std::endl;
     stream << "       stdev error: " << std_dev_error(totalError) << std::endl << std::endl;
     stream << std::endl;

@@ -1389,7 +1389,9 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
     memset(gnaModel->Operations, 0, gnaModel->NumberOfOperations * sizeof(Gna2Operation));
     gnaOperation = gnaModel->Operations;
     for (size_t i = 0; i < component.size(); i++) {
-        log::debug() << "Component + " << i << "=GNA_" << std::distance(gnaModel->Operations, gnaOperation) << "\n";
+        log::debug() << "DNN layer " << i << " " << component[i].original_layer_name << " = GNA layer"
+                  << std::distance(gnaModel->Operations, gnaOperation)
+                  << "\n";
 
         auto& comp = component[i];
         switch (comp.operation) {

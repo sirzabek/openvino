@@ -62,9 +62,9 @@ static bool GetVerifiedMVNData(const std::shared_ptr<opset8::MVN> mvn, MVNData& 
     IE_ASSERT(axes_const);
     auto element_type = axes_const->get_element_type();
 
-    if (!(element_type == element::Type_t::i64 ? ValidateAxes<int64_t>(axes_const, mvn_shape_size)
-                                               : ValidateAxes<int32_t>(axes_const, mvn_shape_size)))
-        return false;
+    //if (!(element_type == element::Type_t::i64 ? ValidateAxes<int64_t>(axes_const, mvn_shape_size)
+    //                                           : ValidateAxes<int32_t>(axes_const, mvn_shape_size)))
+    //    return false;
 
     if (mvn_shape_size == 4) {
         mvn_data.N = mvn_shape[0];
@@ -76,6 +76,11 @@ static bool GetVerifiedMVNData(const std::shared_ptr<opset8::MVN> mvn, MVNData& 
         mvn_data.C = mvn_shape[0];
         mvn_data.H = mvn_shape[1];
         mvn_data.W = mvn_shape[2];
+    } else if (mvn_shape_size == 2) {
+        mvn_data.N = 1;
+        mvn_data.C = 1;
+        mvn_data.H = mvn_shape[0];
+        mvn_data.W = mvn_shape[1];
     } else {
         THROW_GNA_EXCEPTION << "Unsupported MVN shape size: " << mvn_shape_size;
     }
@@ -329,10 +334,10 @@ static std::function<bool(Output<Node>)> verify_rank_batch() {
     return [=](Output<Node> output) -> bool {
         // Only rank 3 and 4 and batch 1 are supported for now
         auto rank = output.get_partial_shape().rank();
-        if (rank != 3 && rank != 4)
+        if (rank != 2 && rank != 3 && rank != 4)
             return false;
 
-        auto batch = (rank == 3 ? 1 : output.get_partial_shape()[0]);
+        auto batch = ((rank == 3 || rank == 2) ? 1 : output.get_partial_shape()[0]);
         if (batch != 1)
             return false;
 

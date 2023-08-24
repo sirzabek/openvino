@@ -2440,6 +2440,14 @@ void GNAGraphCompiler::connectOutput(InferenceEngine::CNNLayerPtr layer, void* p
 
     log::debug() << "Connecting output " << layer->name << " ...\n";
     // in case of Memory Layer it's input allocated in meminput layer
+    
+    // First we need to skip all non-functional layers with no graph branches
+    // to be able to correctly detect functional layers later on
+    while (layer->outData.size() == 1 && getInputTo(layer->outData.front()).size() == 1 &&
+           LayerInfo(getInputTo(layer->outData.front()).begin()->second).isNonFunctional()) {
+        layer = getInputTo(layer->outData.front()).begin()->second;
+    }
+
     if (layer->outData.size() == 1) {
         for (int j = 0; j != static_cast<int>(getInputTo(layer->outData.front()).size()); j++) {
             auto isNonFunctional = [](CNNLayerPtr l) {

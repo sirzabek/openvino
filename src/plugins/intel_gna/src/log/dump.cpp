@@ -446,30 +446,41 @@ class GnaMemStats {
 public:
     void Add(const std::string memory_tag,
              const std::string operand_name,
-             const std::string operation_name,
+             const std::string operation_type,
              const uint32_t size) {
-        if (size == 0)
+        if (size == 0 ||
+            (memory_tag == "Gna2MemoryTagScratch" && (operand_name == "inputs" || operand_name == "outputs")))
             return;
-        const std::pair<std::string, std::string> key = std::make_pair(operation_name, memory_tag + " " + operand_name);
-        m_stats[key] = size;
+        const std::pair<std::string, std::string> key = std::make_pair(operation_type, memory_tag + " " + operand_name);
+        mem_stats[key] = size;
     }
     std::string GetFormattedMemStats() {
         std::stringstream output;
-        output << "Per Layer memory statistics: " << std::endl;
-        // Assumes that std::map with pair keys is lexicographically ordered which is true in this and previous versions
-        // of C++.
-        std::string previous_layer = "";
-        for (auto pair : m_stats) {
-            std::string current_layer = pair.first.first;
-            if (current_layer != previous_layer) {
-                output << "\t" << current_layer << std::endl;
+        output << "\nPer layer type memory statistics: \n";
+        std::map<std::pair<std::string, std::string>, uint32_t> per_layer_type_stats;
+
+        for (auto stat_entry : mem_stats) {
+            const std::pair<std::string, std::string> layer_type_tag_pair = stat_entry.first;
+            if (per_layer_type_stats.find(layer_type_tag_pair) != per_layer_type_stats.end()) {
+                per_layer_type_stats[layer_type_tag_pair] += stat_entry.second;
+            } else {
+                per_layer_type_stats[layer_type_tag_pair] = stat_entry.second;
             }
-            output << "\t\t" << pair.first.second << ": " << pair.second << " bytes." << std::endl;
-            previous_layer = current_layer;
         }
-        output << "Aggregate memory statistics: " << std::endl;
+
+        std::string previous_layer_type = "";
+        for (auto stat_entry : per_layer_type_stats) {
+            std::string current_layer_type = stat_entry.first.first;
+            if (current_layer_type != previous_layer_type) {
+                output << "\t" << stat_entry.first.first << "\n";
+                previous_layer_type = current_layer_type;
+            }
+            output << "\t\t" << stat_entry.first.second << ": " << stat_entry.second << " bytes.\n";
+        }
+
+        output << "\nAggregate memory statistics: \n";
         std::map<std::string, uint32_t> aggr_stats;
-        for (auto pair : m_stats) {
+        for (auto pair : mem_stats) {
             const std::string key = pair.first.second;
             if (aggr_stats.count(key) == 0) {
                 aggr_stats[key] = pair.second;
@@ -478,14 +489,14 @@ public:
             }
         }
         for (auto stat : aggr_stats) {
-            output << "\t" << stat.first << ": " << stat.second << " bytes." << std::endl;
+            output << "\t" << stat.first << ": " << stat.second << " bytes.\n";
         }
         return output.str();
     }
 
 private:
     // uint32_t allows for a little above 4 Gb of size without overflow so it's more than sufficient.
-    std::map<std::pair<std::string, std::string>, uint32_t> m_stats;
+    std::map<std::pair<std::string, std::string>, uint32_t> mem_stats;
 };
 
 void DumpGna2Model(const Gna2Model& gnaModel,
@@ -498,27 +509,21 @@ void DumpGna2Model(const Gna2Model& gnaModel,
     std::stringstream dumpFileName;
     uint32_t opsNo = gnaModel.NumberOfOperations;
     std::time_t currTime = std::time(nullptr);
+    const auto& allAllocationsSorted = allAllocations.GetAllocationsInExportOrder();
 
     dumpFileName << dumpFolderNameGNA << "Gna2ModelDebugDump_" << opsNo << "_layer_"
                  << std::put_time(std::localtime(&currTime), "%Y%m%d%H%M%S") << modeOfOperation;
-
     std::ofstream dumpFile(dumpFileName.str() + ".txt", std::ios::out);
-
-    const auto& allAllocationsSorted = allAllocations.GetAllocationsInExportOrder();
-    for (auto&& a : allAllocationsSorted) {
-        dumpFile << "Allocation: ptr=" << a.ptr << "\tsizeRequested=" << a.sizeRequested
-                 << "\tsizeGranted=" << a.sizeGranted << "\t tag=" << a.GetTagName() << "\n";
-    }
-
     dumpFile << "Layers (operations) count: " << opsNo << "\n";
 
     for (size_t i = 0; i < opsNo; i++) {
         const auto& operation = gnaModel.Operations[i];
+        const auto operation_type = GetLayerType(operation.Type);
 
         dumpFile << "------------------------------------------------------------------------\n\n";
 
         dumpFile << "Layer (operation): " << i << "\n";
-        dumpFile << "Layer (operation) type: " << GetLayerType(operation.Type) << "\n";
+        dumpFile << "Layer (operation) type: " << operation_type << "\n";
         dumpFile << "Number of possible operands: " << operation.NumberOfOperands << "\n";
 
         for (size_t j = 0; j < operation.NumberOfOperands; j++) {
@@ -526,30 +531,36 @@ void DumpGna2Model(const Gna2Model& gnaModel,
                 dumpFile << "\tOperand " << j << " == nullptr\n";
                 continue;
             }
+
             const auto& operand = *operation.Operands[j];
-            void* foundPtr = nullptr;
-            std::string foundName = "AllocationNotFound";
-            size_t offset = 0;
-            auto found = std::find_if(allAllocationsSorted.begin(),
-                                      allAllocationsSorted.end(),
-                                      [operand](const GnaAllocation& allocation) {
-                                          return allocation.getOffset(operand.Data).first;
-                                      });
-            if (found != allAllocationsSorted.end()) {
-                foundPtr = found->ptr;
-                foundName = found->GetTagName();
-                offset = found->getOffset(operand.Data).second;
+            void* allocation_pointer = nullptr;
+            std::string memory_tag = "AllocationNotFound";
+            size_t allocation_offset = 0;
+
+            const auto allocation = std::find_if(allAllocationsSorted.begin(),
+                                                 allAllocationsSorted.end(),
+                                                 [operand](const GnaAllocation& allocation) {
+                                                     return allocation.getOffset(operand.Data).first;
+                                                 });
+
+            if (allocation != allAllocationsSorted.end()) {
+                allocation_pointer = allocation->ptr;
+                memory_tag = allocation->GetTagName();
+                allocation_offset = allocation->getOffset(operand.Data).second;
             }
+
             const uint32_t size =
                 Gna2RoundUp(GetGnaShapeSize(operand.Shape, GetTypeByteSize(operand.Type)),
                             static_cast<uint32_t>(ov::intel_gna::limitations::getMemoryAlignmentBytes(target)));
+
             dumpFile << "\tOperand " << j << " (" << GetOperandName(operation.Type, j) << ")"
                      << " type: " << GetOperandType(operand.Type) << " shape: " << GetSimpleString(operand.Shape)
-                     << " tag: " << foundName << " offset: " << offset << " size: " << size << " data: " << operand.Data
-                     << " baseAlloc: " << foundPtr << " layout: ";
-            gna_stats.Add(foundName,
+                     << " tag: " << memory_tag << " offset: " << allocation_offset << " size: " << size
+                     << " data: " << operand.Data << " baseAlloc: " << allocation_pointer << " layout: ";
+
+            gna_stats.Add(memory_tag,
                           GetOperandName(operation.Type, j),
-                          std::to_string(i) + " " + GetLayerType(operation.Type),
+                          operation_type,
                           size);
 
             DumpCharArray(dumpFile, operand.Layout, GNA2_SHAPE_MAXIMUM_NUMBER_OF_DIMENSIONS);
@@ -592,7 +603,14 @@ void DumpGna2Model(const Gna2Model& gnaModel,
             }
         }
     }
+
     dumpFile << "------------------------------------------------------------------------\n\n";
+
+    for (auto&& a : allAllocationsSorted) {
+        dumpFile << "Allocation: ptr=" << a.ptr << "\tsizeRequested=" << a.sizeRequested
+                 << "\tsizeGranted=" << a.sizeGranted << "\t tag=" << a.GetTagName() << "\n";
+    }
+
     dumpFile << gna_stats.GetFormattedMemStats() << std::endl;
 }
 

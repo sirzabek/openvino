@@ -21,7 +21,7 @@
 #include "exec_graph_info.hpp"
 #include "gna_convolution.hpp"
 #include "gna_dwsc.hpp"
-#include "gna_max_pool.hpp"
+#include "gna_pool.hpp"
 #include "ie_legacy_itt.hpp"
 #include "legacy/graph_tools.hpp"
 #include "legacy/net_pass.h"
@@ -595,7 +595,7 @@ CNNLayerCreator::CNNLayerCreator() {
                                Builder::asString(axis < 0 ? axis + node->get_input_shape(0).size() : axis);
                            return res;
                        });
-    addSpecificCreator({"AvgPool", "MaxPool", "GNAMaxPool"},
+    addSpecificCreator({"AvgPool", "MaxPool", "GNAPool"},
                        [](const std::shared_ptr<::ngraph::Node>& node,
                           const std::map<std::string, std::string>& params) -> CNNLayerPtr {
                            LayerParams attrs = {node->get_friendly_name(),
@@ -612,10 +612,17 @@ CNNLayerCreator::CNNLayerCreator() {
                                res->params.erase("exclude_pad");
                            }
 
-                           if (node->description() == "MaxPool" || node->description() == "GNAMaxPool") {
+                           if (node->description() == "MaxPool") {
                                res->params["pool-method"] = "max";
                            } else if (node->description() == "AvgPool") {
                                res->params["pool-method"] = "avg";
+                           } else if (node->description() == "GNAPool") {
+                               if (res->params.find("pool_method") != res->params.end() &&
+                                   details::CaselessEq<std::string>()(res->params["pool_method"], "MAX")) {
+                                   res->params["pool-method"] = "max";
+                               } else {
+                                   res->params["pool-method"] = "avg";
+                               }
                            }
                            return res;
                        });
@@ -2048,7 +2055,7 @@ void convertFunctionToICNNNetwork(const std::shared_ptr<const ::ngraph::Function
               ::ngraph::as_type_ptr<::ngraph::op::FullyConnected>(consumerLayer) ||
               ::ngraph::as_type_ptr<ov::intel_gna::op::GNAConvolution>(consumerLayer) ||
               ::ngraph::as_type_ptr<ov::intel_gna::op::GNADwsc>(consumerLayer) ||
-              ::ngraph::as_type_ptr<ov::intel_gna::op::GNAMaxPool>(consumerLayer)) &&
+              ::ngraph::as_type_ptr<ov::intel_gna::op::GNAPool>(consumerLayer)) &&
              !keep_constants) ||
             ::ngraph::as_type_ptr<::ngraph::op::v1::BinaryConvolution>(consumerLayer) ||
             ::ngraph::as_type_ptr<::ngraph::op::DeconvolutionIE>(consumerLayer) ||

@@ -13,7 +13,7 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "ops/gna_convolution.hpp"
 #include "ops/gna_dwsc.hpp"
-#include "ops/gna_max_pool.hpp"
+#include "ops/gna_pool.hpp"
 #include "transformations/utils/transformation_helper.hpp"
 #include "transformations/utils/utils.hpp"
 
@@ -24,9 +24,10 @@ using namespace ov::intel_gna::pass;
 using namespace ov::intel_gna::pass::helper;
 
 NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::ReplaceGnaNHWCLayers, "ReplaceGnaNHWCLayers");
-NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNAConvolution, "SubstituteGNAConvolution");
-NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNADwsc, "SubstituteGNADwsc");
-NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGNAMaxPool, "SubstituteGNAMaxPool");
+NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteConvolution, "SubstituteConvolution");
+NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteGroupConvolution, "SubstituteGroupConvolution");
+NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteMaxPool, "SubstituteMaxPool");
+NGRAPH_RTTI_DEFINITION(ov::intel_gna::pass::SubstituteAvgPool, "SubstituteAvgPool");
 
 namespace {
 ov::Shape make_transpose_order_nchw2nhwc(size_t shape_size);
@@ -73,7 +74,7 @@ ov::Shape make_transpose_order_nhwc2nchw(size_t shape_size) {
 
 }  // namespace
 
-namespace SubstituteGNAConvolutionNS {
+namespace SubstituteConvolutionNS {
 
 template <typename From, typename To>
 bool do_transformation(std::shared_ptr<ov::Node> convolution);
@@ -142,49 +143,84 @@ bool do_transformation(std::shared_ptr<ov::Node> convolution) {
 
 }  // namespace SubstituteGNAConvolutionNS
 
-namespace SubstituteGNAMaxPoolNS {
+namespace SubstitutePoolNS {
 
 bool do_transformation(std::shared_ptr<ov::Node> convolution);
 
-bool do_transformation(std::shared_ptr<ov::Node> max_pool) {
-    auto max_pool_node = std::dynamic_pointer_cast<ov::op::v1::MaxPool>(max_pool);
-    auto max_pool_input_data_node = max_pool_node->input_value(0);
-    const ov::Shape max_pool_input_shape = max_pool_node->get_input_shape(0);
+bool do_transformation_max(std::shared_ptr<ov::Node> pool) {
+    auto pool_node = std::dynamic_pointer_cast<ov::op::v1::MaxPool>(pool);
+    auto pool_input_data_node = pool_node->input_value(0);
+    const ov::Shape pool_input_shape = pool_node->get_input_shape(0);
 
-    const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(max_pool_input_shape.size());
+    const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(pool_input_shape.size());
 
     auto transpose_const =
         Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
 
-    auto transpose_before = std::make_shared<Transpose>(max_pool_input_data_node, transpose_const);
+    auto transpose_before = std::make_shared<Transpose>(pool_input_data_node, transpose_const);
 
-    auto max_pool_new = std::make_shared<ov::intel_gna::op::GNAMaxPool>(transpose_before,
-                                                                        max_pool_node->get_strides(),
-                                                                        max_pool_node->get_pads_begin(),
-                                                                        max_pool_node->get_pads_end(),
-                                                                        max_pool_node->get_kernel(),
-                                                                        max_pool_node->get_rounding_type(),
-                                                                        max_pool_node->get_auto_pad());
+    auto pool_new = std::make_shared<ov::intel_gna::op::GNAPool>(transpose_before,
+                                                                     pool_node->get_strides(),
+                                                                     pool_node->get_pads_begin(),
+                                                                     pool_node->get_pads_end(),
+                                                                     pool_node->get_kernel(),
+                                                                     pool_node->get_rounding_type(),
+                                                                     pool_node->get_auto_pad(),
+                                                                     PoolMethod::MAX);
 
-    const ov::Shape transpose_after_order = make_transpose_order_nhwc2nchw(max_pool_new->get_output_shape(0).size());
+    const ov::Shape transpose_after_order = make_transpose_order_nhwc2nchw(pool_new->get_output_shape(0).size());
 
     auto transpose_after = std::make_shared<Transpose>(
-        max_pool_new,
+        pool_new,
         Constant::create(element::i32, ov::Shape{transpose_after_order.size()}, transpose_after_order));
 
-    ov::copy_runtime_info(max_pool_node, {transpose_before, transpose_const, max_pool_new, transpose_after});
+    ov::copy_runtime_info(pool_node, {transpose_before, transpose_const, pool_new, transpose_after});
 
-    ov::replace_output_update_name(max_pool->output(0), transpose_after->output(0));
+    ov::replace_output_update_name(pool_node->output(0), transpose_after->output(0));
 
     return true;
 }
 
-}  // namespace SubstituteGNAMaxPoolNS
+bool do_transformation_avg(std::shared_ptr<ov::Node> pool) {
+    auto pool_node = std::dynamic_pointer_cast<ov::op::v1::AvgPool>(pool);
+    auto pool_input_data_node = pool_node->input_value(0);
+    const ov::Shape pool_input_shape = pool_node->get_input_shape(0);
+
+    const ov::Shape transpose_before_order = make_transpose_order_nchw2nhwc(pool_input_shape.size());
+
+    auto transpose_const =
+        Constant::create(element::i32, ov::Shape{transpose_before_order.size()}, transpose_before_order);
+
+    auto transpose_before = std::make_shared<Transpose>(pool_input_data_node, transpose_const);
+
+    auto pool_new = std::make_shared<ov::intel_gna::op::GNAPool>(transpose_before,
+                                                                 pool_node->get_strides(),
+                                                                 pool_node->get_pads_begin(),
+                                                                 pool_node->get_pads_end(),
+                                                                 pool_node->get_kernel(),
+                                                                 pool_node->get_rounding_type(),
+                                                                 pool_node->get_auto_pad(),
+                                                                 PoolMethod::SUM);
+
+    const ov::Shape transpose_after_order = make_transpose_order_nhwc2nchw(pool_new->get_output_shape(0).size());
+
+    auto transpose_after = std::make_shared<Transpose>(
+        pool_new,
+        Constant::create(element::i32, ov::Shape{transpose_after_order.size()}, transpose_after_order));
+
+    ov::copy_runtime_info(pool_node, {transpose_before, transpose_const, pool_new, transpose_after});
+
+    ov::replace_output_update_name(pool_node->output(0), transpose_after->output(0));
+
+    return true;
+}
+
+}  // namespace SubstitutePoolNS
 
 // ----------------------------------------------------------------------------
 
-ov::intel_gna::pass::SubstituteGNAConvolution::SubstituteGNAConvolution() {
-    MATCHER_SCOPE(SubstituteGNAConvolution);
+ov::intel_gna::pass::SubstituteConvolution::SubstituteConvolution() {
+    MATCHER_SCOPE(SubstituteConvolution);
 
     auto convolution = wrap_type<Convolution>();
 
@@ -194,7 +230,7 @@ ov::intel_gna::pass::SubstituteGNAConvolution::SubstituteGNAConvolution() {
             return false;
         }
 
-        return SubstituteGNAConvolutionNS::do_transformation<Convolution, ov::intel_gna::op::GNAConvolution>(
+        return SubstituteConvolutionNS::do_transformation<Convolution, ov::intel_gna::op::GNAConvolution>(
             convolution_node);
     };
 
@@ -202,8 +238,8 @@ ov::intel_gna::pass::SubstituteGNAConvolution::SubstituteGNAConvolution() {
     this->register_matcher(m, callback);
 }
 
-ov::intel_gna::pass::SubstituteGNADwsc::SubstituteGNADwsc() {
-    MATCHER_SCOPE(SubstituteGNADwsc);
+ov::intel_gna::pass::SubstituteGroupConvolution::SubstituteGroupConvolution() {
+    MATCHER_SCOPE(SubstituteSubstituteGroupConvolutionGNADwsc);
 
     auto convolution = wrap_type<GroupConvolution>();
 
@@ -213,7 +249,7 @@ ov::intel_gna::pass::SubstituteGNADwsc::SubstituteGNADwsc() {
             return false;
         }
 
-        return SubstituteGNAConvolutionNS::do_transformation<GroupConvolution, ov::intel_gna::op::GNADwsc>(
+        return SubstituteConvolutionNS::do_transformation<GroupConvolution, ov::intel_gna::op::GNADwsc>(
             convolution_node);
     };
 
@@ -221,8 +257,8 @@ ov::intel_gna::pass::SubstituteGNADwsc::SubstituteGNADwsc() {
     this->register_matcher(m, callback);
 }
 
-ov::intel_gna::pass::SubstituteGNAMaxPool::SubstituteGNAMaxPool() {
-    MATCHER_SCOPE(SubstituteGNAMaxPool);
+ov::intel_gna::pass::SubstituteMaxPool::SubstituteMaxPool() {
+    MATCHER_SCOPE(SubstituteMaxPool);
 
     auto max_pool = wrap_type<ov::op::v1::MaxPool>();
 
@@ -232,10 +268,28 @@ ov::intel_gna::pass::SubstituteGNAMaxPool::SubstituteGNAMaxPool() {
             return false;
         }
 
-        return SubstituteGNAMaxPoolNS::do_transformation(max_pool_node);
+        return SubstitutePoolNS::do_transformation_max(max_pool_node);
     };
 
     auto m = std::make_shared<Matcher>(max_pool, matcher_name);
+    this->register_matcher(m, callback);
+}
+
+ov::intel_gna::pass::SubstituteAvgPool::SubstituteAvgPool() {
+    MATCHER_SCOPE(SubstituteAvgPool);
+
+    auto avg_pool = wrap_type<ov::op::v1::AvgPool>();
+
+    matcher_pass_callback callback = [=](Matcher& m) {
+        auto avg_pool_node = std::dynamic_pointer_cast<ov::op::v1::AvgPool>(m.get_match_root());
+        if (!avg_pool_node) {
+            return false;
+        }
+
+        return SubstitutePoolNS::do_transformation_avg(avg_pool_node);
+    };
+
+    auto m = std::make_shared<Matcher>(avg_pool, matcher_name);
     this->register_matcher(m, callback);
 }
 
@@ -243,9 +297,10 @@ bool ov::intel_gna::pass::ReplaceGnaNHWCLayers::run_on_model(const std::shared_p
     RUN_ON_MODEL_SCOPE(ReplaceGnaNHWCLayers);
 
     ov::pass::Manager manager(get_pass_config());
-    manager.register_pass<ov::intel_gna::pass::SubstituteGNAConvolution>();
-    manager.register_pass<ov::intel_gna::pass::SubstituteGNADwsc>();
-    manager.register_pass<ov::intel_gna::pass::SubstituteGNAMaxPool>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteConvolution>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteGroupConvolution>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteMaxPool>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteAvgPool>();
     manager.run_passes(function);
 
     return false;

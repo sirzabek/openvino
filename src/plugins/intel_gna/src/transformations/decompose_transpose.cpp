@@ -58,6 +58,53 @@ static bool GetVerifiedTransposeData(const std::shared_ptr<Transpose> transpose,
     return true;
 }
 
+static std::vector<size_t> FindPrimes(size_t n) {
+    std::vector<size_t> factors;
+    size_t n_tmp = n;
+    size_t p = 2;
+    while (n_tmp * n_tmp >= p * p) {
+        if ((n_tmp % p) == 0) {
+            factors.push_back(p);
+            n_tmp = n_tmp / p;
+        } else {
+            p++;
+        }
+    }
+    if (n_tmp > 1) {
+        factors.push_back(n_tmp);
+    }
+    return (factors);
+}
+
+static bool IsFactoredTransposeFeasible(std::vector<size_t> factors) {
+    // check if there are any factors too large for GNA transpose
+    bool feasible = true;
+    for (size_t i = 0; i < factors.size(); i++) {
+        if (factors[i] > 8) {
+            feasible = false;
+        }
+    }
+    return (feasible);
+}
+
+static std::vector<size_t> CombineFactors(std::vector<size_t> factors) {
+    // combine prime factors if possible
+    std::vector<size_t> combined_factors;
+    size_t new_factor = 1;
+    for (size_t i = 0; i < factors.size(); i++) {
+        size_t product = new_factor * factors[i];
+        if (product > 8) {
+            combined_factors.push_back(new_factor);
+            new_factor = factors[i];
+        } else {
+            new_factor = product;
+        }
+    }
+    combined_factors.push_back(new_factor);
+
+    return (combined_factors);
+}
+
 static bool DecomposeTransposeType1(const std::shared_ptr<Transpose> transpose,
                                        const TransposeData& transpose_data) {
     size_t H_new = transpose_data.H;
@@ -94,67 +141,50 @@ static bool DecomposeTransposeType1(const std::shared_ptr<Transpose> transpose,
         return true;
 
     // GNA-incompatible transpose
-    } else if ((H_new % Limitations::kTransposeMaxMinDim) == 0) {
-        // Find prime factors of W_new
-        std::vector<size_t> factors;
-        size_t W_tmp = W_new;
-        size_t p = 2;
+    } else if ((H_new % Limitations::kTransposeMaxMinDim) == 0 || (W_new % Limitations::kTransposeMaxMinDim) == 0) {
+        bool factor_W = ((W_new % Limitations::kTransposeMaxMinDim) == 0);
+        std::vector<size_t> factors = FindPrimes(factor_W ? W_new : H_new);
+        bool feasible = IsFactoredTransposeFeasible(factors);
 
-        while (W_tmp * W_tmp >= p * p) {
-            if ((W_tmp % p) == 0) {
-                factors.push_back(p);
-                W_tmp = W_tmp / p;
-            } else {
-                p++;
-            }
-        }
-
-        if (W_tmp > 1) {
-            factors.push_back(W_tmp);
-        }
-
-        // Check if there are any factors too large for GNA transpose
-        bool feasible = true;
-
-        for (size_t i = 0; i < factors.size(); i++) {
-            if (factors[i] > Limitations::kTransposeMaxMinDim) {
-                feasible = false;
-            }
-        }
-
-        // Perform feasible transformations
+        // perform feasible transformations
         if (feasible) {
-            // Combine prime factors if possible
-            std::vector<size_t> combined_factors;
-            size_t new_factor = 1;
+            std::vector<size_t> combined_factors = CombineFactors(factors);
 
-            for (size_t i = 0; i < factors.size(); i++) {
-                size_t product = new_factor * factors[i];
-                if (product > 8) {
-                    combined_factors.push_back(new_factor);
-                    new_factor = factors[i];
-                } else {
-                    new_factor = product;
-                }
-            }
-
-            combined_factors.push_back(new_factor);
-            // Generate transpose transformation
+            // generate transpose transformation
             OutputVector upstream;
             upstream.push_back(transpose_data.input);
-
             for (size_t i = 0; i < combined_factors.size(); i++) {
-                auto reshape = std::make_shared<Reshape>(upstream[0],
-                    Constant::create(element::i32, Shape{2}, {H_new * W_new / combined_factors[i], combined_factors[i]}), false);
-                auto transpose = std::make_shared<Transpose>(reshape,
-                    Constant::create(element::i32, Shape{2}, {1, 0}));
-                upstream[0] = transpose;
+                if (factor_W) {
+                    auto new_reshape = std::make_shared<Reshape>(
+                        upstream[0],
+                        Constant::create(ngraph::element::i64,
+                                         Shape{2},
+                                         {(H_new)*W_new / combined_factors[i], combined_factors[i]})
+                            ->output(0),
+                        false);
+                    auto new_transpose =
+                        std::make_shared<Transpose>(new_reshape->output(0),
+                                                    Constant::create(element::Type_t::i64, Shape{2}, {1, 0}));
+                    upstream[0] = new_transpose->output(0);
+                } else {
+                    auto new_reshape = std::make_shared<Reshape>(
+                        upstream[0],
+                        Constant::create(ngraph::element::i64,
+                                         Shape{2},
+                                         {combined_factors[i], (H_new)*W_new / combined_factors[i]})
+                            ->output(0),
+                        false);
+                    auto new_transpose =
+                        std::make_shared<Transpose>(new_reshape->output(0),
+                                                    Constant::create(element::Type_t::i64, Shape{2}, {1, 0}));
+                    upstream[0] = new_transpose->output(0);
+                }
             }
-
-            auto reshape = std::make_shared<Reshape>(upstream[0],
-                Constant::create(element::i32, Shape{output_shape.size()}, output_shape), false);
-            ngraph::replace_node(transpose, reshape);
-            reshape->set_friendly_name(transpose_data.name);
+            auto new_reshape = std::make_shared<Reshape>(
+                upstream[0],
+                Constant::create(ngraph::element::i64, Shape{output_shape.size()}, output_shape)->output(0),
+                false);
+            ngraph::replace_node(transpose, new_reshape);
             return true;
         }
     }

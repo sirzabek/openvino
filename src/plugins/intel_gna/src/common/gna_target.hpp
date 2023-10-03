@@ -25,7 +25,7 @@ enum class DeviceVersion {
     GNAEmbedded3_5 = 0x35e,
     GNA3_6 = 0x36e,
     GNA4_0 = 0x40e,
-    Default = GNA3_5
+    Default = GNA3_6
 };
 
 class Target {

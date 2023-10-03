@@ -19,10 +19,10 @@ namespace pass {
  *                                       |
  *                              Transpose (NHWC -> NCHW)
  */
-class SubstituteGNAConvolution : public ngraph::pass::MatcherPass {
+class SubstituteConvolution : public ngraph::pass::MatcherPass {
 public:
     NGRAPH_RTTI_DECLARATION;
-    SubstituteGNAConvolution();
+    SubstituteConvolution();
 };
 
 /**
@@ -34,29 +34,44 @@ public:
  *                                       |
  *                              Transpose (NHWC -> NCHW)
  */
-class SubstituteGNADwsc : public ngraph::pass::MatcherPass {
+class SubstituteGroupConvolution : public ngraph::pass::MatcherPass {
 public:
     NGRAPH_RTTI_DECLARATION;
-    SubstituteGNADwsc();
+    SubstituteGroupConvolution();
 };
 
 /**
- * @brief Substitites ngraph::MaxPool (NCHW) -> GNAMaxPool (NHWC)
+ * @brief Substitites ngraph::MaxPool (NCHW) -> GNAPool (NHWC)
  *
  *                              Transpose (NCHW -> NHWC)
  *                                       |
- * MaxPool (NCHW) ->               GNAMaxPool (NHWC)
+ * MaxPool (NCHW) ->               GNAPool (NHWC)
  *                                       |
  *                              Transpose (NHWC -> NCHW)
  */
-class SubstituteGNAMaxPool : public ngraph::pass::MatcherPass {
+class SubstituteMaxPool : public ngraph::pass::MatcherPass {
 public:
     NGRAPH_RTTI_DECLARATION;
-    SubstituteGNAMaxPool();
+    SubstituteMaxPool();
 };
 
 /**
- * @brief calls SubstituteGNAConvolution, SubstituteGNADwsc and SubstituteGNAMaxPool together
+ * @brief Substitites ngraph::MaxPool (NCHW) -> GNAPool (NHWC)
+ *
+ *                              Transpose (NCHW -> NHWC)
+ *                                       |
+ * MaxPool (NCHW) ->               GNAPool (NHWC)
+ *                                       |
+ *                              Transpose (NHWC -> NCHW)
+ */
+class SubstituteAvgPool : public ngraph::pass::MatcherPass {
+public:
+    NGRAPH_RTTI_DECLARATION;
+    SubstituteAvgPool();
+};
+
+/**
+ * @brief calls SubstituteConvolution, SubstituteGNADwsc and SubstituteGNAPool together
  */
 class ReplaceGnaNHWCLayers : public ngraph::pass::FunctionPass {
 public:

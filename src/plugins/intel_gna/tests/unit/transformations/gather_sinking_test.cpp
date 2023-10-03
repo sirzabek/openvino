@@ -8,7 +8,7 @@
 #include <ngraph/pass/manager.hpp>
 #include <openvino/opsets/opset10.hpp>
 #include <ops/gna_convolution.hpp>
-#include <ops/gna_max_pool.hpp>
+#include <ops/gna_pool.hpp>
 #include <transformations/init_node_info.hpp>
 
 #include "common_test_utils/ngraph_test_utils.hpp"
@@ -97,7 +97,7 @@ TEST(TransposeNCHW, MaxPool) {
     std::shared_ptr<Model> orig_function = function->clone();
     ov::pass::Manager manager;
     manager.register_pass<ov::pass::InitNodeInfo>();
-    manager.register_pass<ov::intel_gna::pass::SubstituteGNAMaxPool>();
+    manager.register_pass<ov::intel_gna::pass::SubstituteGNAPool>();
     manager.run_passes(function);
     ASSERT_NO_THROW(check_rt_info(function));
 
@@ -109,7 +109,7 @@ TEST(TransposeNCHW, MaxPool) {
 
         auto transpose_before = std::make_shared<Transpose>(input_params, transpose_before_const);
 
-        auto max_pool = std::make_shared<ov::intel_gna::op::GNAMaxPool>(transpose_before,
+        auto max_pool = std::make_shared<ov::intel_gna::op::GNAPool>(transpose_before,
                                                                         Strides{2, 1},
                                                                         Shape{0, 0},
                                                                         Shape{0, 0},

@@ -285,9 +285,10 @@ float DWSCFilter32SingleHWC(const float bias,
                 const auto kc = oc;
                 const auto imageIndex = getQubeIndex(ih, iw, ic, IW, IC);
                 const auto imageElement = image[imageIndex];
-                const auto filterIndex = getQubeIndex(kh, kw, kc, KH, KC);
+                const auto filterIndex = getQubeIndex(kh, kw, kc, KW, KC);
                 const auto filterElement = filter[filterIndex];
                 const auto product = imageElement * filterElement;
+                //std::cout << imageElement << " * " << filterElement << " index " << filterIndex << std::endl;
                 output += product;
             }
         }

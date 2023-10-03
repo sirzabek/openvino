@@ -65,7 +65,7 @@ static bool CheckIfLastComponentIsPrecededByConv2d(const backend::DnnComponents:
             last_element++;
             if (last_element->dnnComponent.operation == kDnnConvolutional2dOp ||
                 last_element->dnnComponent.operation == kDnnDwscOp) {
-                proceded_by_conv2D = (prev_operation == kDnnMaxPoolOp);
+                proceded_by_conv2D = (prev_operation == kDnnMaxPoolOp || prev_operation == kDnnSumPoolOp);
             }
         }
     }
@@ -755,7 +755,7 @@ void GNAGraphCompiler::finalizeConvolution2DPrimitive(InferenceEngine::CNNLayerP
 
     const auto inputPrec = OvGnaTypeIntFromBytes(inputs->getPrecision().size());
     const auto outputPrec = OvGnaTypeIntFromBytes(outputs->getPrecision().size());
-    const auto weightPrec = OvGnaTypeIntFromBytes(convolution._weights->getTensorDesc().getPrecision().size());
+    auto weightPrec = OvGnaTypeIntFromBytes(convolution._weights->getTensorDesc().getPrecision().size());
     const auto biasPrec = OvGnaTypeIntFromBytes(biasPrecision.size());
 
     const auto is_dwsc = (convolution._group > 1);
@@ -1057,8 +1057,9 @@ void GNAGraphCompiler::PoolingPrimitive(InferenceEngine::CNNLayerPtr layer) {
         break;
         // we are loosing precision here
     case PoolingLayer::AVG:
+        break;
     default:
-        // TODO: convert to SUMM pooling
+        // TODO: convert to SUM pooling
         THROW_GNA_EXCEPTION << "Layer :" << layer->name << " not supported";
     }
 
@@ -1071,7 +1072,8 @@ void GNAGraphCompiler::PoolingPrimitive(InferenceEngine::CNNLayerPtr layer) {
                               {pooling._stride[X_AXIS], pooling._stride[Y_AXIS]},
                               GetScaleFactor(layer, QuantizedDataType::output),
                               ptr_inputs,
-                              ptr_outputs);
+                              ptr_outputs,
+                              (pooling._type == PoolingLayer::MAX) ? true : false);
     size_t num_data_bytes_out = InferenceEngine::details::product(begin(outputs->getDims()), end(outputs->getDims()));
 
     // Need to reserve more memory otherwise the compiled model would not be
@@ -1179,15 +1181,15 @@ void GNAGraphCompiler::ConcatPrimitive(InferenceEngine::CNNLayerPtr layer) {
         }
     }
 
-    // Concat axis validation
-    if (!Limitations::validate_conv_concat_axis(concatLayer)) {
-        std::ostringstream in_dims_oss;
-        auto in_dims = concatLayer->insData[0].lock()->getDims();
-        std::copy(in_dims.begin(), in_dims.end(), std::ostream_iterator<size_t>(in_dims_oss, ","));
-        THROW_GNA_EXCEPTION << "Topology with layer: " + layer->name + ", type: " + layer->type +
-                                   ", and concatenation axis(" + std::to_string(concatLayer->_axis) +
-                                   ") for input dimensions(" + in_dims_oss.str() + ") not supported\n";
-    }
+    //// Concat axis validation
+    //if (!Limitations::validate_conv_concat_axis(concatLayer)) {
+    //    std::ostringstream in_dims_oss;
+    //    auto in_dims = concatLayer->insData[0].lock()->getDims();
+    //    std::copy(in_dims.begin(), in_dims.end(), std::ostream_iterator<size_t>(in_dims_oss, ","));
+    //    THROW_GNA_EXCEPTION << "Topology with layer: " + layer->name + ", type: " + layer->type +
+    //                               ", and concatenation axis(" + std::to_string(concatLayer->_axis) +
+    //                               ") for input dimensions(" + in_dims_oss.str() + ") not supported\n";
+    //}
 
     auto& concatLayerInfo = concat_connection.find(concatLayer->name)->second;
     std::function<InferenceEngine::CNNLayerPtr(InferenceEngine::CNNLayerPtr)> find_cascaded_concat_recursively =
@@ -2084,6 +2086,14 @@ void GNAGraphCompiler::PWLPrimitive(InferenceEngine::CNNLayerPtr layer) {
     auto outputs = *layer->outData.begin();
     float output_pwl_scale_factor = GetScaleFactor(layer, QuantizedDataType::output);
     float input_pwl_scale_factor = GetScaleFactor(layer, QuantizedDataType::input);
+
+    auto nextLayer = CNNNetCheckNextLayerSkipCertain(layer, 0, 0, true, [](CNNLayerPtr layer) {
+                         return false;
+                     }).first;
+    if (nextLayer && nextLayer->name == "AvgPool") {
+        auto poolKernelSize = nextLayer->GetParamAsInt("kernel", 0) * nextLayer->GetParamAsInt("kernel", 1);
+        output_pwl_scale_factor /= poolKernelSize;
+    }
 
     auto orientation = kDnnInterleavedOrientation;
 

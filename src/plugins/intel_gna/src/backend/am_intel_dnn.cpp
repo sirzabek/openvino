@@ -281,10 +281,11 @@ void AMIntelDNN::InitMaxpoolComponentPrivate(intel_dnn_component_t& comp,
                                              float output_scale_factor,
                                              void*& ptr_inputs,
                                              void*& ptr_outputs,
-                                             bool postInitMem) {
+                                             bool postInitMem,
+                                             bool isMaxPool) {
     comp.num_bytes_per_input = num_bytes_per_input;
     comp.num_bytes_per_output = num_bytes_per_output;
-    comp.operation = kDnnMaxPoolOp;
+    comp.operation = isMaxPool ? kDnnMaxPoolOp : kDnnSumPoolOp;
     comp.orientation_in = kDnnNonInterleavedOrientation;
     comp.orientation_out = kDnnNonInterleavedOrientation;
     comp.op.maxpool.inCHW = inCHW;
@@ -1389,7 +1390,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
     memset(gnaModel->Operations, 0, gnaModel->NumberOfOperations * sizeof(Gna2Operation));
     gnaOperation = gnaModel->Operations;
     for (size_t i = 0; i < component.size(); i++) {
-        log::debug() << "DNN layer " << i << " " << component[i].original_layer_name << " = GNA layer"
+        std::cout << "DNN layer " << i << " " << component[i].original_layer_name << " = GNA layer "
                   << std::distance(gnaModel->Operations, gnaOperation)
                   << "\n";
 
@@ -1597,6 +1598,98 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
                 THROW_GNA_EXCEPTION << "Pooling component applied to non-convolutional layer";
             }
             break;
+        case kDnnSumPoolOp:
+            if (i == 0) {
+                THROW_GNA_EXCEPTION << "Pooling component with no preceeding component";
+            } else if (gnaOperation->Type == Gna2OperationTypeConvolution) {
+                if (gnaOperation->Operands == nullptr || gnaOperation->NumberOfOperands <= PwlOpIdx) {
+                    THROW_GNA_EXCEPTION << "Number and details of operands are wrong";
+                }
+                auto pwlOperand = gnaOperation->Operands[PwlOpIdx];
+                if (pwlOperand != nullptr && pwlOperand->Shape.Dimensions[0] != 0 &&
+                    gnaOperation->Operands[InOpIdx]->Shape.NumberOfDimensions == 2) {  // kDnnConvolutional1dOp
+                    THROW_GNA_EXCEPTION << "Encountered activation component before pooling component at index == "
+                                        << i;
+                } else {
+                    const auto poolMode = reinterpret_cast<Gna2PoolingMode*>(gnaUserAllocator(sizeof(Gna2PoolingMode)));
+                    IE_ASSERT(poolMode != nullptr);
+                    *poolMode = Gna2PoolingModeSum;
+
+                    Gna2Shape* poolWindow{};
+                    Gna2Shape* poolStride{};
+
+                    if (gnaOperation->Operands[InOpIdx]->Shape.NumberOfDimensions == 2) {  // kDnnConvolutional1dOp
+                        poolWindow = create_shape1D_parameter(comp.op.maxpool.poolingWindowXY[0]);
+                        poolStride = create_shape1D_parameter(comp.op.maxpool.poolingStrideXY[0]);
+                    } else {
+                        poolWindow = create_shape2D_parameter(comp.op.maxpool.poolingWindowXY[1],
+                                                              comp.op.maxpool.poolingWindowXY[0]);
+                        poolStride = create_shape2D_parameter(comp.op.maxpool.poolingStrideXY[1],
+                                                              comp.op.maxpool.poolingStrideXY[0]);
+                    }
+
+                    // number of output columns correction - based on GNA-library expectations
+
+                    if ((gnaOperation->NumberOfParameters > PoolModeParamIdx &&
+                         gnaOperation->Parameters[PoolModeParamIdx] != nullptr) ||
+                        (gnaOperation->NumberOfParameters > PoolWinParamIdx &&
+                         gnaOperation->Parameters[PoolWinParamIdx] != nullptr) ||
+                        (gnaOperation->NumberOfParameters > PoolStrideParamIdx &&
+                         gnaOperation->Parameters[PoolStrideParamIdx] != nullptr)) {
+                        THROW_GNA_EXCEPTION << "Pooling parameters should not be initialized";
+                    }
+                    HelperGna2OperationSetParameter(gnaOperation,
+                                                    gnaUserAllocator,
+                                                    gnaUserFree,
+                                                    PoolModeParamIdx,
+                                                    poolMode);
+                    HelperGna2OperationSetParameter(gnaOperation,
+                                                    gnaUserAllocator,
+                                                    gnaUserFree,
+                                                    PoolWinParamIdx,
+                                                    poolWindow);
+                    HelperGna2OperationSetParameter(gnaOperation,
+                                                    gnaUserAllocator,
+                                                    gnaUserFree,
+                                                    PoolStrideParamIdx,
+                                                    poolStride);
+
+                    // adjust Gna2OperationTypeConvolution fused layer output dimensions to reflect convolution
+                    // zeroPadding and pooling
+                    if (gnaOperation->Operands[InOpIdx]->Shape.NumberOfDimensions != 2) {  // kDnnConvolutional2dOp
+                        auto& outputTensor = const_cast<Gna2Tensor&>(*gnaOperation->Operands[OutOpIdx]);
+                        const auto fltStrideShape =
+                            reinterpret_cast<Gna2Shape*>(gnaOperation->Parameters[ConvStrideParamIdx]);
+                        // Override GNA operation output pointer with the one from pooling component
+                        outputTensor.Data = comp.ptr_outputs;
+
+                        Gna2Shape zeroPadding{};
+                        if (gnaOperation->NumberOfParameters > ZeroPaddingParamIdx &&
+                            gnaOperation->Parameters[ZeroPaddingParamIdx] != nullptr) {
+                            zeroPadding = *reinterpret_cast<Gna2Shape*>(gnaOperation->Parameters[ZeroPaddingParamIdx]);
+                        }
+                        const int beginOfHInNHWC = 1;
+                        const int beginOfHInHW = 0;
+                        for (auto&& dimHW : {0, 1}) {
+                            const auto inputPadded =
+                                gnaOperation->Operands[InOpIdx]->Shape.Dimensions[beginOfHInNHWC + dimHW] +
+                                zeroPadding.Dimensions[beginOfHInHW + dimHW] * 2;
+                            const auto nFltSize =
+                                gnaOperation->Operands[FilterOpIdx]->Shape.Dimensions[beginOfHInNHWC + dimHW];
+                            const auto fltStride = fltStrideShape->Dimensions[beginOfHInHW + dimHW];
+                            const auto outFromConv = outputFromConv(inputPadded, nFltSize, fltStride);
+                            outputTensor.Shape.Dimensions[beginOfHInNHWC + dimHW] =
+                                outputFromPooling(outFromConv,
+                                                  poolWindow->Dimensions[beginOfHInHW + dimHW],
+                                                  poolStride->Dimensions[beginOfHInHW + dimHW]);
+                        }
+                    }
+                    AdvanceOperationIfAllApplied(component, i, gnaOperation);
+                }
+            } else {
+                THROW_GNA_EXCEPTION << "Pooling component applied to non-convolutional layer";
+            }
+            break;
         case kDnnPiecewiselinearOp: {
             IE_ASSERT(gnaOperation->Operands != nullptr);
             IE_ASSERT(OutOpIdx < gnaOperation->NumberOfOperands);
@@ -1610,7 +1703,7 @@ void AMIntelDNN::InitGNAStruct(Gna2Model* gnaModel) {
                 (component[i - 1].operation == kDnnRecurrentOp) ||
                 (component[i - 1].operation == kDnnConvolutional1dOp) ||
                 (component[i - 1].operation == kDnnConvolutional2dOp) || (component[i - 1].operation == kDnnDwscOp) ||
-                ((component[i - 1].operation == kDnnMaxPoolOp) &&
+                (((component[i - 1].operation == kDnnMaxPoolOp) || (component[i - 1].operation == kDnnSumPoolOp)) &&
                  (component[i - 2].operation == kDnnConvolutional1dOp ||
                   component[i - 2].operation == kDnnConvolutional2dOp))) {
                 if (gnaOperation->Operands[PwlOpIdx] == nullptr) {

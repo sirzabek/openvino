@@ -21,7 +21,7 @@
 #include "openvino/opsets/opset12.hpp"
 #include "ops/gna_convolution.hpp"
 #include "ops/gna_dwsc.hpp"
-#include "ops/gna_max_pool.hpp"
+#include "ops/gna_pool.hpp"
 
 namespace ov {
 namespace intel_gna {
@@ -259,8 +259,8 @@ public:
      * @param is_exception_allowed flag specifies whether exception is allowed
      * @return true if precision is found in supported
      */
-    bool is_pooling_supported(const std::shared_ptr<ov::intel_gna::op::GNAMaxPool> max_pool,
-                              bool is_exception_allowed = false);
+    //bool is_pooling_supported(const std::shared_ptr<ov::intel_gna::op::GNAPool> max_pool,
+    bool is_pooling_supported(const std::shared_ptr<ov::Node> node, bool is_exception_allowed = false);
 
     static bool is_concat_supported(const std::shared_ptr<const ov::Node>& node, bool is_exception_allowed);
     static bool is_forward_transposed_concat_supported(const std::shared_ptr<const ov::Node>& node,

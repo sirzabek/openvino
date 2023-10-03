@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "gna_max_pool.hpp"
+#include "gna_pool.hpp"
 
 #include <assert.h>
 
@@ -126,34 +126,37 @@ ov::PartialShape infer_batched_pooling_forward(const ov::Node* node,
     return data_batch_output_shape;
 }
 
-GNAMaxPool::GNAMaxPool(const ov::Output<ov::Node>& arg,
-                       const ov::Strides& strides,
-                       const ov::Shape& pads_begin,
-                       const ov::Shape& pads_end,
-                       const ov::Shape& kernel,
-                       const ov::op::RoundingType rounding_type,
-                       const ov::op::PadType auto_pad)
+GNAPool::GNAPool(const ov::Output<ov::Node>& arg,
+                 const ov::Strides& strides,
+                 const ov::Shape& pads_begin,
+                 const ov::Shape& pads_end,
+                 const ov::Shape& kernel,
+                 const ov::op::RoundingType rounding_type,
+                 const ov::op::PadType auto_pad,
+                 const PoolMethod pool_method)
     : Op({arg}),
       m_kernel(kernel),
       m_strides(strides),
       m_pads_begin(pads_begin),
       m_pads_end(pads_end),
       m_auto_pad(auto_pad),
-      m_rounding_type(rounding_type) {
+      m_rounding_type(rounding_type),
+      m_pool_method(pool_method) {
     constructor_validate_and_infer_types();
 }
 
-bool GNAMaxPool::visit_attributes(ov::AttributeVisitor& visitor) {
+bool GNAPool::visit_attributes(ov::AttributeVisitor& visitor) {
     visitor.on_attribute("strides", m_strides);
     visitor.on_attribute("pads_begin", m_pads_begin);
     visitor.on_attribute("pads_end", m_pads_end);
     visitor.on_attribute("kernel", m_kernel);
     visitor.on_attribute("rounding_type", m_rounding_type);
     visitor.on_attribute("auto_pad", m_auto_pad);
+    visitor.on_attribute("pool_method", m_pool_method);
     return true;
 }
 
-void GNAMaxPool::validate_and_infer_types() {
+void GNAPool::validate_and_infer_types() {
     if (0 == m_strides.size()) {
         m_strides = ov::Strides(m_kernel.size(), 1);
     }
@@ -199,7 +202,7 @@ void GNAMaxPool::validate_and_infer_types() {
     set_output_type(0, get_input_element_type(0), output_shape);
 }
 
-ov::PartialShape GNAMaxPool::infer_output_shape(const ov::Strides& dilations) {
+ov::PartialShape GNAPool::infer_output_shape(const ov::Strides& dilations) {
     const auto& arg_shape = get_input_partial_shape(0);
 
     bool update_auto_padding_succeed = true;
@@ -241,7 +244,7 @@ ov::PartialShape GNAMaxPool::infer_output_shape(const ov::Strides& dilations) {
     return output_shape;
 }
 
-bool GNAMaxPool::update_auto_padding(const ov::PartialShape& in_shape,
+bool GNAPool::update_auto_padding(const ov::PartialShape& in_shape,
                                      const ov::Strides& filter_dilations,
                                      ov::Shape& new_pads_end,
                                      ov::Shape& new_pads_begin) const {
@@ -261,17 +264,30 @@ bool GNAMaxPool::update_auto_padding(const ov::PartialShape& in_shape,
     return update_auto_padding_succeed;
 }
 
-std::shared_ptr<ov::Node> GNAMaxPool::clone_with_new_inputs(const ov::OutputVector& new_args) const {
+std::shared_ptr<ov::Node> GNAPool::clone_with_new_inputs(const ov::OutputVector& new_args) const {
     check_new_args_count(this, new_args);
-    return std::make_shared<GNAMaxPool>(new_args.at(0),
-                                        m_strides,
-                                        m_pads_begin,
-                                        m_pads_end,
-                                        m_kernel,
-                                        m_rounding_type,
-                                        m_auto_pad);
+    return std::make_shared<GNAPool>(new_args.at(0),
+                                     m_strides,
+                                     m_pads_begin,
+                                     m_pads_end,
+                                     m_kernel,
+                                     m_rounding_type,
+                                     m_auto_pad,
+                                     m_pool_method);
 }
 
 }  // namespace op
 }  // namespace intel_gna
+
+std::ostream& operator<<(std::ostream& s, const PoolMethod& type) {
+    return s << as_string(type);
+}
+
+template <>
+EnumNames<PoolMethod>& EnumNames<PoolMethod>::get() {
+    static auto enum_names = EnumNames<PoolMethod>("POOL_METHOD",
+                                                   {{"max", PoolMethod::MAX},
+                                                    {"sum", PoolMethod::SUM}});
+    return enum_names;
+}
 }  // namespace ov

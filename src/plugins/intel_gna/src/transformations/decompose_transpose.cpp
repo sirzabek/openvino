@@ -247,9 +247,9 @@ static std::shared_ptr<Node> GetTransposeOrder(const TransposeData& transpose_da
 
 static bool DecomposeTransposeType3(const std::shared_ptr<Transpose> transpose,
                                     const TransposeData& transpose_data) {
-    if (transpose_data.order == std::vector<int32_t>{0, 1, 3, 2} ||
-        transpose_data.order == std::vector<int32_t>{0, 2, 1} ||
-        transpose_data.order == std::vector<int32_t>{1, 0}) {
+    if ((transpose_data.order == std::vector<int32_t>{0, 1, 3, 2} ||
+        transpose_data.order == std::vector<int32_t>{0, 2, 1} || transpose_data.order == std::vector<int32_t>{1, 0}) &&
+        transpose_data.H != 1 && transpose_data.W != 1) {
 
         OutputVector chunks;
 

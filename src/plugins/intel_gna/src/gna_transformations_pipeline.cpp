@@ -145,11 +145,11 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
         manager.register_pass<ov::intel_gna::pass::GatherSinkingTranspose>();
         manager.register_pass<ov::pass::TransposeSinkingGeneral>();
         manager.register_pass<ov::intel_gna::pass::TransposeCompress>();
+        manager.register_pass<ov::intel_gna::pass::DecomposeTranspose>();
         manager.register_pass<ov::intel_gna::pass::TSConcatForward>();
         manager.register_pass<ov::intel_gna::pass::TSSplitBackward>();
         manager.register_pass<ov::pass::ReshapeSequenceFusion>();
         manager.register_pass<ov::pass::TransposeToReshape>();
-        manager.register_pass<ov::intel_gna::pass::DecomposeTranspose>();
         manager.register_pass<ov::intel_gna::pass::GatherSinkingGeneral>();
         manager.register_pass<ov::intel_gna::pass::GnaConvolutionFusion>();
         manager.register_pass<ov::pass::transpose_sinking::TSFuse>();

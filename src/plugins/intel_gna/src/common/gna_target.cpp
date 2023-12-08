@@ -48,7 +48,7 @@ static const std::unordered_map<Gna2DeviceVersion, DeviceVersion> GnaDeviceMap{
     {Gna2DeviceVersion3_5, DeviceVersion::GNA3_5},
     {Gna2DeviceVersionEmbedded3_5, DeviceVersion::GNAEmbedded3_5},
     {Gna2DeviceVersionEmbedded3_6, DeviceVersion::GNA3_6},
-    //{Gna2DeviceVersionEmbedded4_0, DeviceVersion::GNA4_0},
+    {Gna2DeviceVersionEmbedded4_0, DeviceVersion::GNA4_0},
     {Gna2DeviceVersionSoftwareEmulation, DeviceVersion::SoftwareEmulation}};
 
 static const std::unordered_map<std::string, DeviceVersion> StringDeviceMap{

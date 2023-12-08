@@ -265,9 +265,9 @@ void ov::Model::validate_nodes_and_infer_types() const {
         std::all_of(pair_checker.begin(), pair_checker.end(), [](const std::pair<op::util::Variable*, Counter>& val) {
             return val.second.cnt_assign == 1 && val.second.cnt_read_val == 1;
         });
-    OPENVINO_ASSERT(only_pairs,
-                    "Model is incorrect. Assign and ReadValue operations must be in pairs on the "
-                    "network.");
+    //OPENVINO_ASSERT(only_pairs,
+    //                "Model is incorrect. Assign and ReadValue operations must be in pairs on the "
+    //                "network.");
     for (const auto& output : outputs()) {
         OPENVINO_ASSERT(ov::layout::utils::is_compatible(ov::layout::get_layout(output), output.get_partial_shape()),
                         "Result '",

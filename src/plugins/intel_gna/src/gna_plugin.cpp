@@ -494,7 +494,9 @@ void GNAPlugin::LoadNetwork(const CNNNetwork& _network) {
     });
 
     std::vector<CNNLayerPtr> sortedNoMem;
-    std::unordered_map<std::string, std::vector<InferenceEngine::CNNLayerPtr>> memoryPairs;
+    std::unordered_map<std::string,
+                       std::pair<std::vector<InferenceEngine::CNNLayerPtr>, std::vector<InferenceEngine::CNNLayerPtr>>>
+        memoryPairs;
     // find all memory layers pairs and mark which one used as outputs
     int id = 0;
     for (auto& layer : sortedNet) {
@@ -514,8 +516,12 @@ void GNAPlugin::LoadNetwork(const CNNNetwork& _network) {
         if (layerInfo.isMemory()) {
             // collect all memory pairs
             auto id = generic->GetParamAsString("id");
-            memoryPairs[id].resize(generic->GetParamAsInt("size"));
-            memoryPairs[id][generic->GetParamAsInt("index")] = layer;
+            //memoryPairs[id].resize(generic->GetParamAsInt("size"));
+            if (generic->GetParamAsInt("index") == 0) {
+                memoryPairs[id].first.push_back(layer);
+            } else {
+                memoryPairs[id].second.push_back(layer);
+            }
             continue;
         } else if (layerInfo.isConcat()) {
             m_graph_compiler->fillConcatConnections(layer);

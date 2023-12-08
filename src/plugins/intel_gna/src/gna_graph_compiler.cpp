@@ -113,16 +113,30 @@ intel_dnn_component_t* GNAGraphCompiler::find_first_unused_input(InferenceEngine
 }
 
 void GNAGraphCompiler::fillMemoryConnections(
-    std::unordered_map<std::string, std::vector<InferenceEngine::CNNLayerPtr>>& memoryPairs) {
+    std::unordered_map<std::string,
+    std::pair<std::vector<InferenceEngine::CNNLayerPtr>, std::vector<InferenceEngine::CNNLayerPtr>>>& memoryPairs) {
     for (auto& memory : memoryPairs) {
-        auto inputLayer = memory.second[1];
-        auto outputLayer = memory.second[0];
-
-        IE_ASSERT(1 == outputLayer->insData.size());
-
-        // creating connection for layers output as form of extramap
-        memory_connection.emplace_back(memory.first,
-                                       GNAMemoryLayer(inputLayer, outputLayer, gna_config.gnaFlags.sw_fp32 ? 4 : 2));
+        if (memory.second.first.size() == memory.second.second.size()) {
+            for (size_t i = 0; i < memory.second.first.size(); i++) {
+                auto inputLayer = memory.second.second[i];
+                auto outputLayer = memory.second.first[i];
+                IE_ASSERT(1 == outputLayer->insData.size());
+                // creating connection for layers output as form of extramap
+                memory_connection.emplace_back(
+                    memory.first,
+                    GNAMemoryLayer(inputLayer, outputLayer, gna_config.gnaFlags.sw_fp32 ? 4 : 2));
+            }
+        } else {
+            for (size_t i = 0; i < memory.second.first.size(); i++) {
+                auto inputLayer = memory.second.second[0];
+                auto outputLayer = memory.second.first[i];
+                IE_ASSERT(1 == outputLayer->insData.size());
+                // creating connection for layers output as form of extramap
+                memory_connection.emplace_back(
+                    memory.first,
+                    GNAMemoryLayer(inputLayer, outputLayer, gna_config.gnaFlags.sw_fp32 ? 4 : 2));
+            }
+        }
     }
 }
 
@@ -2449,7 +2463,7 @@ void GNAGraphCompiler::connectOutput(InferenceEngine::CNNLayerPtr layer, void* p
     };
 
     log::debug() << "Connecting output " << layer->name << " ...\n";
-    // in case of Memory Layer it's input allocated in meminput layer
+    // in case of Memory Layer its input is allocated in meminput layer
     
     // First we need to skip all non-functional layers with no graph branches
     // to be able to correctly detect functional layers later on
@@ -2478,8 +2492,10 @@ void GNAGraphCompiler::connectOutput(InferenceEngine::CNNLayerPtr layer, void* p
                 });
             if (nextMemoryLayerIt != memory_connection.end()) {
                 auto& nextMemoryLayer = nextMemoryLayerIt->second;
+                //std::cout << "Memory layer output " << nextMemoryLayer.getOutput()->name << std::endl;
                 // memory layer not yet initialized
                 if (nextMemoryLayer.reserved_size == 0) {
+                    std::cout << "Memory layer output new " << nextMemoryLayer.getOutput()->name << std::endl;
                     nextMemoryLayer.reserved_size = ALIGN(nextMemoryLayer.getByteSize(), gnamem->getDataMemAlignment());
                     gnamem->getQueue(REGION_STATES)
                         ->reserve_ptr(nullptr, &nextMemoryLayer.gna_ptr, nextMemoryLayer.reserved_size);
@@ -2488,6 +2504,7 @@ void GNAGraphCompiler::connectOutput(InferenceEngine::CNNLayerPtr layer, void* p
                 } else {
                     // We may need to extend memory buffer if connected input size is bigger, for example for concat
                     // connection
+                    std::cout << "Memory layer output initialized " << nextMemoryLayer.getOutput()->name << std::endl;
                     gnamem->getQueue(REGION_AUTO)
                         ->bind_ptr(nullptr,
                                    ptr,
@@ -2797,6 +2814,7 @@ ConnectionDetails GNAGraphCompiler::connectInput(CNNLayerPtr layer,
         // TODO: this is duplicate with connect output
         auto& memoryLayer = prevMemoryLayer->second;
         if (memoryLayer.reserved_size == 0) {
+            std::cout << "Memory layer input new " << memoryLayer.getInput()->name << std::endl;
             memoryLayer.reserved_size = ALIGN(memoryLayer.getByteSize(), gnamem->getDataMemAlignment());
             // connectTo used for  indicate that memory layer should be bound to given buffer
             if (connectTo) {
@@ -2815,6 +2833,7 @@ ConnectionDetails GNAGraphCompiler::connectInput(CNNLayerPtr layer,
             }
         } else {
             // We may need to extend memory buffer if connected input size is bigger, for example for concat connection
+            std::cout << "Memory layer input initialized " << memoryLayer.getInput()->name << std::endl;
             gnamem->getQueue(REGION_AUTO)->bind_ptr(nullptr, ptr, &memoryLayer.gna_ptr, offset, num_data_bytes_in);
         }
         return prevLayer;

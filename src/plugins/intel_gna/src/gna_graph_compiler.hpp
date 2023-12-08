@@ -75,7 +75,9 @@ public:
                      std::shared_ptr<gna_memory_type> gna_mem_ptr);
     void setGNAMemoryPtr(std::shared_ptr<gna_memory_type> gnaMemPtr);
 
-    void fillMemoryConnections(std::unordered_map<std::string, std::vector<InferenceEngine::CNNLayerPtr>>& memoryPairs);
+    void fillMemoryConnections(std::unordered_map<std::string,
+                                                  std::pair<std::vector<InferenceEngine::CNNLayerPtr>,
+                                                            std::vector<InferenceEngine::CNNLayerPtr>>>& memoryPairs);
 
     void fillConcatConnections(InferenceEngine::CNNLayerPtr layer);
     void fillSplitConnections(InferenceEngine::CNNLayerPtr layer);

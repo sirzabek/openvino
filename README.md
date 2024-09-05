@@ -172,6 +172,20 @@ The system requirements vary depending on platform and are available on dedicate
 
 See [How to build OpenVINO](./docs/dev/build.md) to get more information about the OpenVINO build process.
 
+### Mike's Notes
+
+```
+    \# for faster build, make sure aria2.exe is in the path<br>
+    export GIT_CLONE_PROTECTION_ACTIVE=false<br>
+    git clone https://github.com/mdeisher/openvino.git<br>
+    cd openvino/<br>
+    git checkout experimental<br>
+    git submodule update --init –recursive<br>    
+    mkdir build<br>
+    cd build<br>
+    cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CLANG_FORMAT=ON -DENABLE_TESTS=OFF -DENABLE_TEMPLATE=ON -DENABLE_INTEL_GPU=OFF -DENABLE_GAPI_PREPROCESSING=OFF -DENABLE_MULTI=OFF -DENABLE_AUTO=OFF -DENABLE_AUTO_BATCH=OFF -DENABLE_HETERO=OFF -DENABLE_DATA=OFF -DENABLE_INTEL_GNA=ON -DENABLE_OV_TF_FRONTEND=OFF -DENABLE_OV_ONNX_FRONTEND=OFF -DENABLE_OV_PADDLE_FRONTEND=OFF -DENABLE_DEBUG_CAPS=ON -DENABLE_CPU_DEBUG_CAPS=ON -DENABLE_PYTHON=ON -DPYTHON_EXECUTABLE="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\python.exe" -DPYTHON_INCLUDE_DIR="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\include" -DPYTHON_LIBRARY="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\libs\python38.lib" ..<br>
+```
+
 ## How to contribute
 
 See [Contributions Welcome](https://github.com/openvinotoolkit/openvino/issues/17502) for good first issues.
@@ -192,7 +206,7 @@ Report questions, issues and suggestions, using:
 
 * [OpenVINO Wiki](https://github.com/openvinotoolkit/openvino/wiki)
 * [OpenVINO Storage](https://storage.openvinotoolkit.org/)
-* Additional OpenVINO™ toolkit modules: 
+* Additional OpenVINO™ toolkit modules:
     * [openvino_contrib](https://github.com/openvinotoolkit/openvino_contrib)
 * [Intel® Distribution of OpenVINO™ toolkit Product Page](https://software.intel.com/content/www/us/en/develop/tools/openvino-toolkit.html)
 * [Intel® Distribution of OpenVINO™ toolkit Release Notes](https://software.intel.com/en-us/articles/OpenVINO-RelNotes)

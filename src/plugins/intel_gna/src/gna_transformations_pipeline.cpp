@@ -73,6 +73,12 @@
 #include "transformations/unfuse_reshape_and_transpose.hpp"
 #include "transformations/utils/transformation_helper.hpp"
 #include "transformations/utils/utils.hpp"
+#include "transformations/gna_mvn.hpp"
+#include "transformations/gna_to_mvn.hpp"
+#include "transformations/gna_to_mvn2.hpp"
+#include "transformations/gna_lstm.hpp"
+#include "transformations/gna_concat.hpp"
+#include "transformations/gna_transpose.hpp"
 
 using namespace ov;
 using namespace ov::opset8;
@@ -99,13 +105,18 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     // and we need to run the ConvertPrecision transformation to support old networks.
     manager.register_pass<ov::pass::ConvertPrecision>(precisions_map{{ngraph::element::f16, ngraph::element::f32}});
     manager.register_pass<ov::pass::ConvertMVN1ToMVN6>();
-    manager.register_pass<ov::intel_gna::pass::DecomposeMVN>();
+    manager.register_pass<ngraph::pass::GnaCustomToMvn>();
+    manager.register_pass<ov::pass::Serialize>("after_custommvn.xml", "after_custommvn.bin");
+    manager.register_pass<ngraph::pass::GnaMvnDecomposition>();
+    manager.register_pass<ov::pass::Serialize>("after_mvn.xml", "after_mvn.bin");
+    //manager.register_pass<ov::intel_gna::pass::DecomposeMVN>();
     manager.register_pass<ov::pass::CommonOptimizations>();
     manager.register_pass<ov::intel_gna::pass::RemoveInputConvert>();
     manager.register_pass<ov::intel_gna::pass::RemoveOutputConvert>();
     manager.register_pass<ov::pass::ConvertSequenceToTensorIterator>();
     manager.register_pass<ov::pass::GRUCellDecomposition>();
-    manager.register_pass<ov::pass::LSTMCellDecomposition>();
+    manager.register_pass<ov::pass::Serialize>("after_gru.xml", "after_gru.bin");
+    // manager.register_pass<ov::pass::LSTMCellDecomposition>();
     manager.register_pass<ov::intel_gna::pass::ConvertDWSCToScaleShifts>();
     manager.register_pass<ov::intel_gna::pass::ConvertPaddedToValidConv>();
     manager.register_pass<ov::intel_gna::pass::Decompose2DConvTransposedWithBiasAF>(config.gnaPrecision);
@@ -119,6 +130,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithFq>();
     manager.register_pass<ov::intel_gna::pass::SplitConvolutionWithBias>();
     manager.register_pass<ov::intel_gna::pass::SplitConvolution>();
+    manager.register_pass<ov::pass::Serialize>("after_conv.xml", "after_conv.bin");
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithTranspose>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithFq>();
     manager.register_pass<ov::intel_gna::pass::InsertReshapeAroundMatmulWithAdd>();
@@ -137,20 +149,28 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::SubstituteSoftsign>();
     manager.register_pass<ov::intel_gna::pass::InsertCopyBeforeLayerToBeEliminated>();
     // TODO enable this transformation for networks without convolutions
-    if (has_convolution || has_maxpool || has_mvn || has_matmul) {
+    //if (has_convolution || has_maxpool || has_mvn || has_matmul) {
         manager.register_pass<ov::intel_gna::pass::ReplaceGnaNHWCLayers>();
         manager.register_pass<ov::intel_gna::pass::InsertConvolutionTransposeHW>();
         manager.register_pass<ov::intel_gna::pass::GatherSinkingTranspose>();
         manager.register_pass<ov::pass::TransposeSinkingGeneral>();
         manager.register_pass<ov::intel_gna::pass::TransposeCompress>();
-        manager.register_pass<ov::intel_gna::pass::TSConcatForward>();
-        manager.register_pass<ov::intel_gna::pass::TSSplitBackward>();
-        manager.register_pass<ov::intel_gna::pass::GatherSinkingGeneral>();
+        //manager.register_pass<ov::intel_gna::pass::TSConcatForward>();
+        //manager.register_pass<ov::intel_gna::pass::TSSplitBackward>();
+        //manager.register_pass<ov::intel_gna::pass::GatherSinkingGeneral>();
         manager.register_pass<ov::pass::ReshapeSequenceFusion>();
         manager.register_pass<ov::pass::TransposeToReshape>();
         manager.register_pass<ov::intel_gna::pass::GnaConvolutionFusion>();
         manager.register_pass<ov::pass::transpose_sinking::TSFuse>();
-    }
+    //}
+    manager.register_pass<ov::pass::Serialize>("after_layout.xml", "after_layout.bin");
+    manager.register_pass<ov::pass::GnaLstmDecomposition>();
+    manager.register_pass<ov::pass::Serialize>("after_lstm.xml", "after_lstm.bin");
+    manager.register_pass<ov::intel_gna::pass::ConvertMatmulToPointWiseConvolution>();
+    manager.register_pass<ov::intel_gna::pass::ReplaceGnaNHWCLayers>();
+    manager.register_pass<ngraph::pass::GnaConcatDecomposition>();
+    manager.register_pass<ov::intel_gna::pass::GnaTransposeDecomposition>();
+    manager.register_pass<ov::pass::Serialize>("after_fixup.xml", "after_fixup.bin");
     manager.register_pass<ov::intel_gna::pass::RemoveInputsProcessing>(input_output_subgraphs);
     manager.register_pass<ov::intel_gna::pass::RemoveOutputsProcessing>(input_output_subgraphs);
     manager.register_pass<ov::pass::ConvertOpSet3ToOpSet2>();
@@ -197,6 +217,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::pass::ConvertPrecision>(precisions_map{{ov::element::i64, ov::element::i32},
                                                                      {ov::element::u64, ov::element::i32},
                                                                      {ov::element::u32, ov::element::i32}});
+    manager.register_pass<ov::pass::Serialize>("final_graph.xml", "final_graph.bin");
     const auto& pass_config = manager.get_pass_config();
 
     pass_config->set_callback<ov::pass::transpose_sinking::TSConcatForward>(

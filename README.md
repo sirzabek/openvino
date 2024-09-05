@@ -175,15 +175,15 @@ See [How to build OpenVINO](./docs/dev/build.md) to get more information about t
 ### Mike's Notes
 
 ```
-    \# for faster build, make sure aria2.exe is in the path<br>
-    export GIT_CLONE_PROTECTION_ACTIVE=false<br>
-    git clone https://github.com/mdeisher/openvino.git<br>
-    cd openvino/<br>
-    git checkout experimental<br>
-    git submodule update --init –recursive<br>    
-    mkdir build<br>
-    cd build<br>
-    cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CLANG_FORMAT=ON -DENABLE_TESTS=OFF -DENABLE_TEMPLATE=ON -DENABLE_INTEL_GPU=OFF -DENABLE_GAPI_PREPROCESSING=OFF -DENABLE_MULTI=OFF -DENABLE_AUTO=OFF -DENABLE_AUTO_BATCH=OFF -DENABLE_HETERO=OFF -DENABLE_DATA=OFF -DENABLE_INTEL_GNA=ON -DENABLE_OV_TF_FRONTEND=OFF -DENABLE_OV_ONNX_FRONTEND=OFF -DENABLE_OV_PADDLE_FRONTEND=OFF -DENABLE_DEBUG_CAPS=ON -DENABLE_CPU_DEBUG_CAPS=ON -DENABLE_PYTHON=ON -DPYTHON_EXECUTABLE="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\python.exe" -DPYTHON_INCLUDE_DIR="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\include" -DPYTHON_LIBRARY="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\libs\python38.lib" ..<br>
+    \# for faster build, make sure aria2.exe is in the path
+    export GIT_CLONE_PROTECTION_ACTIVE=false
+    git clone https://github.com/mdeisher/openvino.git
+    cd openvino
+    git checkout experimental
+    git submodule update --init –recursive
+    mkdir build
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CLANG_FORMAT=ON -DENABLE_TESTS=OFF -DENABLE_TEMPLATE=ON -DENABLE_INTEL_GPU=OFF -DENABLE_GAPI_PREPROCESSING=OFF -DENABLE_MULTI=OFF -DENABLE_AUTO=OFF -DENABLE_AUTO_BATCH=OFF -DENABLE_HETERO=OFF -DENABLE_DATA=OFF -DENABLE_INTEL_GNA=ON -DENABLE_OV_TF_FRONTEND=OFF -DENABLE_OV_ONNX_FRONTEND=OFF -DENABLE_OV_PADDLE_FRONTEND=OFF -DENABLE_DEBUG_CAPS=ON -DENABLE_CPU_DEBUG_CAPS=ON -DENABLE_PYTHON=ON -DPYTHON_EXECUTABLE="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\python.exe" -DPYTHON_INCLUDE_DIR="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\include" -DPYTHON_LIBRARY="C:\Users\mdeisher.AMR\AppData\Local\Programs\Python\Python38\libs\python38.lib" ..
 ```
 
 ## How to contribute

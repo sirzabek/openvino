@@ -49,13 +49,21 @@ bool ngraph::pass::GnaCustomToMvn::run_on_model(const std::shared_ptr<ngraph::Fu
         // Ugly code to match our pattern
         std::shared_ptr<ngraph::opset1::Subtract> subtract1 = nullptr;
         std::shared_ptr<ngraph::opset1::Subtract> subtract2 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> subtractfq1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> subtractfq2 = nullptr;
         std::shared_ptr<ngraph::opset1::ReduceMean> reducemean1 = nullptr;
         std::shared_ptr<ngraph::opset1::ReduceMean> reducemean2 = nullptr;
         std::shared_ptr<ngraph::opset1::ReduceMean> reducemean3 = nullptr;
-        std::shared_ptr<ngraph::opset1::Multiply> multiply1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> reducemeanfq1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> reducemeanfq2 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> reducemeanfq3 = nullptr;
+        std::shared_ptr<ov::op::v1::Multiply> multiply1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> multiplyfq1 = nullptr;
         std::shared_ptr<ngraph::opset1::Add> add1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> addfq1 = nullptr;
         std::shared_ptr<ngraph::opset1::Sqrt> sqrt1 = nullptr;
-        std::shared_ptr<ngraph::opset1::Divide> divide1 = nullptr;
+        std::shared_ptr<ov::op::v1::Divide> divide1 = nullptr;
+        std::shared_ptr<ov::op::v0::FakeQuantize> dividefq1 = nullptr;
         std::set<ov::Input<ov::Node>> children;
         if (reshape) {
             children = reshape->output(0).get_target_inputs();
@@ -80,34 +88,83 @@ bool ngraph::pass::GnaCustomToMvn::run_on_model(const std::shared_ptr<ngraph::Fu
         auto children2 = subtract[1]->output(0).get_target_inputs();
         subtract1 = subtract[0];
         subtract2 = subtract[1];
-        multiply1 = std::dynamic_pointer_cast<ngraph::opset1::Multiply>(children1.begin()->get_node()->shared_from_this());
-        divide1 = std::dynamic_pointer_cast<ngraph::opset1::Divide>(children2.begin()->get_node()->shared_from_this());
+        subtractfq1 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children1.begin()->get_node()->shared_from_this());
+        subtractfq2 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children2.begin()->get_node()->shared_from_this());
+        if (subtractfq1) {
+            auto fqchildren = subtractfq1->output(0).get_target_inputs();
+            multiply1 = std::dynamic_pointer_cast<ov::op::v1::Multiply>(fqchildren.begin()->get_node()->shared_from_this());
+        } else {
+            multiply1 = std::dynamic_pointer_cast<ov::op::v1::Multiply>(children1.begin()->get_node()->shared_from_this());
+        }
+        if (subtractfq2) {
+            auto fqchildren = subtractfq2->output(0).get_target_inputs();
+            divide1 = std::dynamic_pointer_cast<ov::op::v1::Divide>(fqchildren.begin()->get_node()->shared_from_this());
+        } else {
+            divide1 = std::dynamic_pointer_cast<ov::op::v1::Divide>(children2.begin()->get_node()->shared_from_this());
+        }
         if ((multiply1 == nullptr) && (divide1 == nullptr)) {
             subtract1 = subtract[1];
             subtract2 = subtract[0];
-            multiply1 = std::dynamic_pointer_cast<ngraph::opset1::Multiply>(children2.begin()->get_node()->shared_from_this());
-            divide1 = std::dynamic_pointer_cast<ngraph::opset1::Divide>(children1.begin()->get_node()->shared_from_this());
+            children1 = subtract1->output(0).get_target_inputs();
+            children2 = subtract2->output(0).get_target_inputs();
+            subtractfq1 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children1.begin()->get_node()->shared_from_this());
+            subtractfq2 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children2.begin()->get_node()->shared_from_this());
+            if (subtractfq1) {
+                auto fqchildren = subtractfq1->output(0).get_target_inputs();
+                multiply1 = std::dynamic_pointer_cast<ov::op::v1::Multiply>(fqchildren.begin()->get_node()->shared_from_this());
+            } else {
+                multiply1 = std::dynamic_pointer_cast<ov::op::v1::Multiply>(children1.begin()->get_node()->shared_from_this());
+            }
+            if (subtractfq2) {
+                auto fqchildren = subtractfq2->output(0).get_target_inputs();
+                divide1 = std::dynamic_pointer_cast<ov::op::v1::Divide>(fqchildren.begin()->get_node()->shared_from_this());         
+            } else {
+                divide1 = std::dynamic_pointer_cast<ov::op::v1::Divide>(children2.begin()->get_node()->shared_from_this());
+            }
         }
         if ((multiply1 == nullptr) || (divide1 == nullptr)) {
             continue;
         }
+        reducemeanfq1 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(subtract1->input_value(1).get_node_shared_ptr());
+        reducemeanfq2 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(subtract2->input_value(1).get_node_shared_ptr());
         reducemean1 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(subtract1->input_value(1).get_node_shared_ptr());
         reducemean2 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(subtract2->input_value(1).get_node_shared_ptr());
+        if (reducemeanfq1) {
+            reducemean1 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(reducemeanfq1->input_value(0).get_node_shared_ptr());
+        }
+        if (reducemeanfq2) {
+            reducemean2 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(reducemeanfq2->input_value(0).get_node_shared_ptr());
+        }
         if ((reducemean1 == nullptr) || (reducemean2 == nullptr)) {
             continue;
         }
         children = multiply1->output(0).get_target_inputs();
+        multiplyfq1 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children.begin()->get_node()->shared_from_this());
         reducemean3 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(children.begin()->get_node()->shared_from_this());
+        if (multiplyfq1) {
+            auto fqchildren = multiplyfq1->output(0).get_target_inputs();
+            reducemean3 = std::dynamic_pointer_cast<ngraph::opset1::ReduceMean>(fqchildren.begin()->get_node()->shared_from_this());
+        }
         if ((children.size() != 1) || (reducemean3 == nullptr)) {
             continue;
         }
         children = reducemean3->output(0).get_target_inputs();
+        reducemeanfq3 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children.begin()->get_node()->shared_from_this());
         add1 = std::dynamic_pointer_cast<ngraph::opset1::Add>(children.begin()->get_node()->shared_from_this());
+        if (reducemeanfq3) {
+            auto fqchildren = reducemeanfq3->output(0).get_target_inputs();
+            add1 = std::dynamic_pointer_cast<ngraph::opset1::Add>(fqchildren.begin()->get_node()->shared_from_this());
+        }
         if ((children.size() != 1) || (add1 == nullptr)) {
             continue;
         }
         children = add1->output(0).get_target_inputs();
+        addfq1 = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(children.begin()->get_node()->shared_from_this());
         sqrt1 = std::dynamic_pointer_cast<ngraph::opset1::Sqrt>(children.begin()->get_node()->shared_from_this());
+        if (addfq1) {
+            auto fqchildren = addfq1->output(0).get_target_inputs();
+            sqrt1 = std::dynamic_pointer_cast<ngraph::opset1::Sqrt>(fqchildren.begin()->get_node()->shared_from_this());
+        }
         if ((children.size() != 1) || (sqrt1 == nullptr)) {
             continue;
         }
@@ -118,7 +175,14 @@ bool ngraph::pass::GnaCustomToMvn::run_on_model(const std::shared_ptr<ngraph::Fu
         if ((divide1 != tmp1) || (divide1 != tmp2)) {
             continue;
         }
+        auto epsilon_constfq = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(add1->input_value(1).get_node_shared_ptr());
         auto epsilon_const = std::dynamic_pointer_cast<ngraph::opset1::Constant>(add1->input_value(1).get_node_shared_ptr());
+        if (epsilon_constfq) {
+            epsilon_const = std::dynamic_pointer_cast<ngraph::opset1::Constant>(epsilon_constfq->input_value(0).get_node_shared_ptr());
+        }
+        if (epsilon_const == nullptr) {
+            continue;
+        }
         const float* epsilon_ptr = epsilon_const->get_data_ptr<float>();
 
         auto across_channels = false;

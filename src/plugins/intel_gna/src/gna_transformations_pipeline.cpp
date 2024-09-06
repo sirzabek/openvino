@@ -79,6 +79,7 @@
 #include "transformations/gna_lstm.hpp"
 #include "transformations/gna_concat.hpp"
 #include "transformations/gna_transpose.hpp"
+#include "transformations/gna_fixshape.hpp"
 
 using namespace ov;
 using namespace ov::opset8;
@@ -100,9 +101,11 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     const bool has_mvn = ov::op::util::has_op_with_type<ov::opset8::MVN>(model) ||
                          ov::op::util::has_op_with_type<ov::op::v0::MVN>(model);
     ov::pass::Manager manager;
+    manager.register_pass<ov::pass::Serialize>("initial_graph.xml", "initial_graph.bin");
     manager.register_pass<ov::pass::InitNodeInfo>();
     // In OV API 2.0(IRv10) default convertion to fp32 (inputs, outputs and weights) is disabled
     // and we need to run the ConvertPrecision transformation to support old networks.
+    manager.register_pass<ngraph::pass::GnaShapeFixup>();
     manager.register_pass<ov::pass::ConvertPrecision>(precisions_map{{ngraph::element::f16, ngraph::element::f32}});
     manager.register_pass<ov::pass::ConvertMVN1ToMVN6>();
     manager.register_pass<ngraph::pass::GnaCustomToMvn>();

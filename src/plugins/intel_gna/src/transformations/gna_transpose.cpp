@@ -142,6 +142,7 @@ static bool decompose(std::shared_ptr<ov::opset11::Transpose> transpose) {
             || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 3) && (order[3] == 1))
             || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 1) && (order[2] == 3) && (order[3] == 2) && (input_shape[1] == 1))
             || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 3) && (order[2] == 2) && (order[3] == 1) && (input_shape[1] == 1))
+            || ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 1) && (order[3] == 3) && (input_shape[0] == 1) && (input_shape[3] == 1))
             || ((input_shape.size() == 3) && (order[0] == 2) && (order[1] == 0) && (order[2] == 1))
             || ((input_shape.size() == 3) && (order[0] == 1) && (order[1] == 2) && (order[2] == 0))
             || ((input_shape.size() == 3) && (order[0] == 0) && (order[1] == 2) && (order[2] == 1) && (input_shape[0] == 1))
@@ -153,6 +154,9 @@ static bool decompose(std::shared_ptr<ov::opset11::Transpose> transpose) {
                 H_new = C * H;
             } else if ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 3) && (order[3] == 1)) {
                 H_new = C;
+                W_new = H * W;
+            } else if ((input_shape.size() == 4) && (order[0] == 0) && (order[1] == 2) && (order[2] == 1) && (order[3] == 3)) {
+                H_new = N * C;
                 W_new = H * W;
             } else if ((input_shape.size() == 3) && (order[0] == 2) && (order[1] == 0) && (order[2] == 1)) {
                 H_new = C * H;

@@ -173,6 +173,7 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::intel_gna::pass::ReplaceGnaNHWCLayers>();
     manager.register_pass<ngraph::pass::GnaConcatDecomposition>();
     manager.register_pass<ov::intel_gna::pass::GnaTransposeDecomposition>();
+    manager.register_pass<ov::pass::transpose_sinking::TSFuse>();
     manager.register_pass<ov::pass::Serialize>("after_fixup.xml", "after_fixup.bin");
     manager.register_pass<ov::intel_gna::pass::RemoveInputsProcessing>(input_output_subgraphs);
     manager.register_pass<ov::intel_gna::pass::RemoveOutputsProcessing>(input_output_subgraphs);

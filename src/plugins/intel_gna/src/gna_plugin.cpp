@@ -176,6 +176,9 @@ void GNAPlugin::UpdateInputScaleFromNetwork(InferenceEngine::CNNNetwork& network
     // only supports cases of int16 or int8
     InputsDataMap inputs = network.getInputsInfo();
     size_t inputIdx = 0;
+    float input0_sf = 0.0f;
+    float input1_sf = 0.0f;
+
     for (auto&& input : inputs) {
         auto data = input.second->getInputData();
         for (auto&& nextToInputLayer : getInputTo(data)) {
@@ -223,7 +226,21 @@ void GNAPlugin::UpdateInputScaleFromNetwork(InferenceEngine::CNNNetwork& network
             (*inputs_ptr_)[input.first].scale_factor = scaleInput;
         }
 
+        if (inputIdx == 0) {
+            input0_sf = config.inputScaleFactorsPerInput[input.first];
+        } else {
+            input1_sf = config.inputScaleFactorsPerInput[input.first];
+        }
         inputIdx++;
+    }
+
+    if (input0_sf != input1_sf) {
+        auto avg = (input0_sf + input1_sf) * 0.5f;
+        for (auto&& input : inputs) {
+            config.inputScaleFactorsPerInput[input.first] = avg;
+            (*inputs_ptr_)[input.first].scale_factor = avg;
+        }
+
     }
 }
 

@@ -119,7 +119,8 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
     manager.register_pass<ov::pass::ConvertSequenceToTensorIterator>();
     manager.register_pass<ov::pass::GRUCellDecomposition>();
     manager.register_pass<ov::pass::Serialize>("after_gru.xml", "after_gru.bin");
-    // manager.register_pass<ov::pass::LSTMCellDecomposition>();
+    manager.register_pass<ov::pass::LSTMCellDecomposition>();
+    manager.register_pass<ov::pass::Serialize>("after_lstm.xml", "after_lstm.bin");
     manager.register_pass<ov::intel_gna::pass::ConvertDWSCToScaleShifts>();
     manager.register_pass<ov::intel_gna::pass::ConvertPaddedToValidConv>();
     manager.register_pass<ov::intel_gna::pass::Decompose2DConvTransposedWithBiasAF>(config.gnaPrecision);
@@ -167,11 +168,12 @@ void TransformationsPipeline::apply(const std::shared_ptr<ov::Model>& model,
         manager.register_pass<ov::pass::transpose_sinking::TSFuse>();
     //}
     manager.register_pass<ov::pass::Serialize>("after_layout.xml", "after_layout.bin");
-    manager.register_pass<ov::pass::GnaLstmDecomposition>();
-    manager.register_pass<ov::pass::Serialize>("after_lstm.xml", "after_lstm.bin");
+    //manager.register_pass<ov::pass::GnaLstmDecomposition>();
+    //manager.register_pass<ov::pass::Serialize>("after_lstm.xml", "after_lstm.bin");
     manager.register_pass<ov::intel_gna::pass::ConvertMatmulToPointWiseConvolution>();
     manager.register_pass<ov::intel_gna::pass::ReplaceGnaNHWCLayers>();
     manager.register_pass<ngraph::pass::GnaConcatDecomposition>();
+    manager.register_pass<ov::intel_gna::pass::GnaSplitDecomposition>();
     manager.register_pass<ov::intel_gna::pass::GnaTransposeDecomposition>();
     manager.register_pass<ov::pass::transpose_sinking::TSFuse>();
     manager.register_pass<ov::pass::Serialize>("after_fixup.xml", "after_fixup.bin");

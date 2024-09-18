@@ -173,7 +173,11 @@ bool ngraph::pass::GnaCustomToMvn::run_on_model(const std::shared_ptr<ngraph::Fu
         auto tmp1 = std::dynamic_pointer_cast<ngraph::opset1::Divide>(children1.begin()->get_node()->shared_from_this());
         auto tmp2 = std::dynamic_pointer_cast<ngraph::opset1::Divide>(children2.begin()->get_node()->shared_from_this());
         if ((divide1 != tmp1) || (divide1 != tmp2)) {
-            continue;
+            children1 = subtractfq2->output(0).get_target_inputs();
+            tmp1 = std::dynamic_pointer_cast<ngraph::opset1::Divide>(children1.begin()->get_node()->shared_from_this());
+            if ((divide1 != tmp1) || (divide1 != tmp2)) {
+                continue;
+            }
         }
         auto epsilon_constfq = std::dynamic_pointer_cast<ov::op::v0::FakeQuantize>(add1->input_value(1).get_node_shared_ptr());
         auto epsilon_const = std::dynamic_pointer_cast<ngraph::opset1::Constant>(add1->input_value(1).get_node_shared_ptr());

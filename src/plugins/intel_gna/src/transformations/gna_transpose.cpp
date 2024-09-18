@@ -370,7 +370,6 @@ static bool decompose(std::shared_ptr<ov::opset11::Transpose> transpose) {
     return false;
 }
 
-
 GnaTransposeDecomposition::GnaTransposeDecomposition() {
     MATCHER_SCOPE(GnaTransposeDecomposition);
     auto conv = ov::pass::pattern::wrap_type<ov::opset11::Transpose>();
@@ -378,6 +377,41 @@ GnaTransposeDecomposition::GnaTransposeDecomposition() {
     ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
         auto trsp = std::dynamic_pointer_cast<ov::opset11::Transpose>(m.get_match_root());
         return decompose(trsp);
+    };
+
+    auto m = std::make_shared<ov::pass::pattern::Matcher>(conv, matcher_name);
+    this->register_matcher(m, callback);
+}
+
+static bool decompose_split(std::shared_ptr<ov::opset11::Split> split) {
+    auto parent = split->input_value(0).get_node_shared_ptr();
+    auto input_shape = parent->get_shape();
+    auto output_shape = split->output(0).get_shape();
+    auto parent_copy = parent->clone_with_new_inputs(parent->input_values());
+    auto transpose_const = ov::opset11::Constant::create(element::Type_t::i64, Shape{2}, {1, 0});
+    auto transpose = std::make_shared<ov::opset11::Transpose>(parent_copy, transpose_const);
+    auto reshape_const = ov::opset11::Constant::create(ngraph::element::i64, Shape{2}, input_shape);
+    auto reshape = std::make_shared<ov::opset11::Reshape>(transpose, reshape_const->output(0), false);
+
+    ngraph::replace_node_update_name(parent, reshape);
+
+    for (auto output : split->outputs()) {
+        auto consumers = output.get_target_inputs();
+        auto transpose_out = std::make_shared<ov::opset11::Transpose>(output, transpose_const);
+        consumers.begin()->replace_source_output(transpose_out);
+    }
+
+    return true;
+}
+
+
+GnaSplitDecomposition::GnaSplitDecomposition() {
+    MATCHER_SCOPE(GnaSplitDecomposition);
+    auto conv = ov::pass::pattern::wrap_type<ov::opset11::Split>();
+
+    ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
+        auto split = std::dynamic_pointer_cast<ov::opset11::Split>(m.get_match_root());
+        return decompose_split(split);
     };
 
     auto m = std::make_shared<ov::pass::pattern::Matcher>(conv, matcher_name);

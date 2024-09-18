@@ -35,6 +35,12 @@ public:
     GnaTransposeDecomposition();
 };
 
+class GnaSplitDecomposition : public ov::pass::MatcherPass {
+public:
+    OPENVINO_RTTI("GnaSplitDecomposition", "0");
+    GnaSplitDecomposition();
+};
+
 }  // namespace pass
 }  // namespace intel_gna
 }  // namespace ov

@@ -383,6 +383,99 @@ GnaTransposeDecomposition::GnaTransposeDecomposition() {
     this->register_matcher(m, callback);
 }
 
+
+// This is a quick and dirty transformation to address a specific problem in a particular model.
+// It should eventually be replaced by a more general implementation.
+static bool predecompose(std::shared_ptr<ov::opset11::Transpose> transpose) {
+
+    const Output<Node>& parent = transpose->input_value(0);
+    auto input_shape = parent.get_shape();
+    auto output_shape = transpose->output(0).get_shape();
+    const Output<Node>& transpose_order = transpose->input_value(1);
+    auto transpose_order_dim = transpose_order.get_shape().size();
+    if (transpose_order_dim != 1)
+        return false;
+    auto const_with_order_values = std::dynamic_pointer_cast<ov::opset11::Constant>(transpose_order.get_node_shared_ptr());
+    if (!const_with_order_values)
+        return false;
+    std::vector<int64_t> order;
+    if (const_with_order_values->get_output_element_type(0) == ov::element::i8) {
+        const int8_t* ptr_order = const_with_order_values->get_data_ptr<int8_t>();
+        for (size_t i = 0; i < input_shape.size(); i++) {
+            order.push_back(*(ptr_order + i));
+        }
+    } else if (const_with_order_values->get_output_element_type(0) == ov::element::i32) {
+        const int32_t* ptr_order = const_with_order_values->get_data_ptr<int32_t>();
+        for (size_t i = 0; i < input_shape.size(); i++) {
+            order.push_back(*(ptr_order + i));
+        }
+    } else {
+        const int64_t* ptr_order = const_with_order_values->get_data_ptr<int64_t>();
+        for (size_t i = 0; i < input_shape.size(); i++) {
+            order.push_back(*(ptr_order + i));
+        }
+    }
+    if (input_shape.size() < 2) {
+        return false;
+    }
+    size_t N = 1;
+    size_t C = 1;
+    size_t H = input_shape[input_shape.size() - 2];
+    size_t W = input_shape[input_shape.size() - 1];
+    if (input_shape.size() == 4) {
+        N = input_shape[0];
+        C = input_shape[1];
+    } else if (input_shape.size() == 3) {
+        C = input_shape[0];
+    }
+
+    if (N != 1) {
+        return false;   // Batch case not yet implemented
+    } else if (((input_shape.size() == 4) && (order[0] == 2) && (order[1] == 0) && (order[2] == 1) && (order[3] == 3))) {
+
+        auto new_reshape = std::make_shared<ov::opset11::Reshape>(parent,
+            ov::opset11::Constant::create(ngraph::element::i64, Shape{3}, {input_shape[1], input_shape[2], input_shape[3]})->output(0), false);
+        new_reshape->set_friendly_name("Squeeze3D");
+        auto axis_node = ov::opset11::Constant::create(element::i64, Shape{}, {0});
+        auto new_split = std::make_shared<ov::opset11::Split>(new_reshape->output(0), axis_node, input_shape[1]);
+        OutputVector parts;
+        for (auto i = 0; i < new_split->get_output_size(); i++) {
+            auto new_reshape = std::make_shared<ov::opset11::Reshape>(new_split->output(i),
+                ov::opset11::Constant::create(ngraph::element::i64, Shape{2}, {input_shape[2], input_shape[3]})->output(0), false);
+            auto new_transpose = std::make_shared<ov::opset11::Transpose>(new_reshape->output(0),
+                ov::opset11::Constant::create(element::Type_t::i64, Shape{2}, {1, 0}));
+            parts.push_back(new_transpose->output(0));
+        }
+        auto new_concat = std::make_shared<ov::opset11::Concat>(parts, 0);
+        auto new_transpose = std::make_shared<ov::opset11::Transpose>(new_concat->output(0),
+            ov::opset11::Constant::create(element::Type_t::i64, Shape{2}, {1, 0}));
+        new_reshape = std::make_shared<ov::opset11::Reshape>(new_transpose->output(0),
+            ov::opset11::Constant::create(ngraph::element::i64, Shape{output_shape.size()}, output_shape)->output(0), false);
+        new_reshape->set_friendly_name("Unsqueeze4D");
+
+        ngraph::replace_node_update_name(transpose, new_reshape);
+        return true;
+
+    } else {
+        return false;
+    }
+    
+    return false;
+}
+
+GnaTransposePreDecomposition::GnaTransposePreDecomposition() {
+    MATCHER_SCOPE(GnaTransposeDecomposition);
+    auto transpose = ov::pass::pattern::wrap_type<ov::opset11::Transpose>();
+
+    ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
+        auto trsp = std::dynamic_pointer_cast<ov::opset11::Transpose>(m.get_match_root());
+        return predecompose(trsp);
+    };
+
+    auto m = std::make_shared<ov::pass::pattern::Matcher>(transpose, matcher_name);
+    this->register_matcher(m, callback);
+}
+
 static bool decompose_split(std::shared_ptr<ov::opset11::Split> split) {
     auto parent = split->input_value(0).get_node_shared_ptr();
     auto input_shape = parent->get_shape();
